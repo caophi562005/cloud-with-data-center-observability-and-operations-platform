@@ -42,7 +42,7 @@
 
 ---
 
-### 任务 1：建立 domain types、mock data 与 providers
+### Task 1：建立 domain types、mock data 与 providers
 
 **文件：**
 - 新建：`apps/web/src/types/domain.ts`
@@ -176,7 +176,7 @@ git commit -m "feat: add CloudOps dashboard mock foundation"
 
 ---
 
-### 任务 2：建立 typed navigation config 与 icon primitive
+### Task 2：建立 typed navigation config 与 icon primitive
 
 **文件：**
 - 新建：`apps/web/src/app/navigation/navigation.types.ts`
@@ -231,7 +231,7 @@ git commit -m "feat: add configurable CloudOps navigation"
 
 ---
 
-### 任务 3：Implement the dashboard feature components
+### Task 3：Implement the dashboard feature components
 
 **文件：**
 - 新建：`apps/web/src/features/dashboard/components/dashboard-welcome.tsx`
@@ -326,7 +326,7 @@ git commit -m "feat: add Phase 1 identity dashboard"
 
 ---
 
-### 任务 4：Implement the PxlKit shell and shared layout
+### Task 4：Implement the PxlKit shell and shared layout
 
 **文件：**
 - 新建：`apps/web/src/components/shell/app-sidebar.tsx`
@@ -418,7 +418,7 @@ git commit -m "feat: add CloudOps sidebar header and layout"
 
 ---
 
-### 任务 5：Wire React Router and replace the Vite App entry
+### Task 5：Wire React Router and replace the Vite App entry
 
 **文件：**
 - 新建：`apps/web/src/app/router/router.tsx`
@@ -476,7 +476,7 @@ git commit -m "feat: wire React Router dashboard entry"
 
 ---
 
-### 任务 6：Replace starter styling and document metadata
+### Task 6：Replace starter styling and document metadata
 
 **文件：**
 - 修改：`apps/web/src/index.css`
@@ -548,7 +548,7 @@ git commit -m "feat: add CloudOps responsive theme styling"
 
 ---
 
-### 任务 7：Build and verify the delivered `/dashboard`
+### Task 7：Build and verify the delivered `/dashboard`
 
 **文件：**
 - Verify all modified files under `apps/web`.
