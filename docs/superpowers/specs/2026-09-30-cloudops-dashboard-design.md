@@ -62,7 +62,8 @@ apps/web/src/
 ├── mocks/
 │   ├── organizations.ts
 │   ├── members.ts
-│   └── current-user.ts
+│   ├── current-user.ts
+│   └── getting-started.ts
 ├── types/
 │   └── domain.ts
 ├── App.tsx
@@ -119,11 +120,12 @@ Organization-specific members are selected from mock data by organization id. Sw
 
 ## Mock data and types
 
-`types/domain.ts` will contain the shared `Organization`, `Member`, `CurrentUser`, and role/status unions. The three files in `src/mocks` will export typed constants only:
+`types/domain.ts` will contain the shared `Organization`, `Member`, `CurrentUser`, `GettingStartedItem`, and role/status unions. The four files in `src/mocks` will export typed constants only:
 
 - `organizations.ts`: `org_001` VNPT Cloud / ADMIN and `org_002` Cloud Lab / OPERATOR.
 - `members.ts`: member rows keyed by organization id, including the requested VNPT Cloud examples.
 - `current-user.ts`: Admin User, `admin@example.com`, role `ADMIN`.
+- `getting-started.ts`: the completed and pending Phase 1 checklist items, including the coming-soon VM item.
 
 No component will contain hard-coded domain records.
 
