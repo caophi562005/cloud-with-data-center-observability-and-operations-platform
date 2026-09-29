@@ -1,116 +1,401 @@
 @import "tailwindcss";
 @import "@pxlkit/ui-kit/styles.css";
-
 @source "../node_modules/@pxlkit/ui-kit";
 
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+/* CloudOps application tokens. PxlKit reads the --retro-* values below. */
+:root,
+.light {
+  color-scheme: light;
 
-  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
-  --heading: system-ui, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --cloudops-page: #f1f5f9;
+  --cloudops-surface: #ffffff;
+  --cloudops-surface-raised: #f8fafc;
+  --cloudops-text: #0f172a;
+  --cloudops-muted: #64748b;
+  --cloudops-border: #cbd5e1;
+  --cloudops-border-strong: #94a3b8;
+  --cloudops-accent: #0891b2;
+  --cloudops-accent-hover: #0e7490;
+  --cloudops-accent-soft: rgba(8, 145, 178, 0.12);
+  --cloudops-focus: #06b6d4;
+  --cloudops-shadow: rgba(15, 23, 42, 0.12);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  --retro-bg: var(--cloudops-page);
+  --retro-surface: var(--cloudops-surface);
+  --retro-card: var(--cloudops-surface-raised);
+  --retro-text: var(--cloudops-text);
+  --retro-border: var(--cloudops-border);
+  --retro-border-strong: var(--cloudops-border-strong);
+  --retro-primary: var(--cloudops-accent);
+  --retro-secondary: #d97706;
+  --retro-accent: var(--cloudops-accent);
+  --retro-muted: var(--cloudops-muted);
+  --retro-green: #15803d;
+  --retro-green-hover: #166534;
+  --retro-cyan: var(--cloudops-accent);
+  --retro-red: #dc2626;
+  --retro-gold: #b45309;
+  --retro-purple: #7c3aed;
+  --retro-pink: #db2777;
+  --retro-shadow-green: rgba(21, 128, 61, 0.22);
+  --retro-shadow-green-lg: rgba(21, 128, 61, 0.14);
+  --retro-shadow-gold: rgba(180, 83, 9, 0.2);
+
+  /* Re-declare the registered Tailwind color properties for theme boundaries. */
+  --color-retro-bg: var(--cloudops-page);
+  --color-retro-surface: var(--cloudops-surface);
+  --color-retro-card: var(--cloudops-surface-raised);
+  --color-retro-text: var(--cloudops-text);
+  --color-retro-border: var(--cloudops-border);
+  --color-retro-border-strong: var(--cloudops-border-strong);
+  --color-retro-primary: var(--cloudops-accent);
+  --color-retro-secondary: #d97706;
+  --color-retro-accent: var(--cloudops-accent);
+  --color-retro-muted: var(--cloudops-muted);
+  --color-retro-green: #15803d;
+  --color-retro-green-hover: #166534;
+  --color-retro-cyan: var(--cloudops-accent);
+  --color-retro-red: #dc2626;
+  --color-retro-gold: #b45309;
+  --color-retro-purple: #7c3aed;
+  --color-retro-pink: #db2777;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --cloudops-page: #0f172a;
+  --cloudops-surface: #111c2e;
+  --cloudops-surface-raised: #17263a;
+  --cloudops-text: #e2e8f0;
+  --cloudops-muted: #94a3b8;
+  --cloudops-border: #334155;
+  --cloudops-border-strong: #475569;
+  --cloudops-accent: #22d3ee;
+  --cloudops-accent-hover: #67e8f9;
+  --cloudops-accent-soft: rgba(34, 211, 238, 0.16);
+  --cloudops-focus: #67e8f9;
+  --cloudops-shadow: rgba(2, 6, 23, 0.45);
+
+  --retro-bg: var(--cloudops-page);
+  --retro-surface: var(--cloudops-surface);
+  --retro-card: var(--cloudops-surface-raised);
+  --retro-text: var(--cloudops-text);
+  --retro-border: var(--cloudops-border);
+  --retro-border-strong: var(--cloudops-border-strong);
+  --retro-primary: var(--cloudops-accent);
+  --retro-secondary: #fbbf24;
+  --retro-accent: var(--cloudops-accent);
+  --retro-muted: var(--cloudops-muted);
+  --retro-green: #4ade80;
+  --retro-green-hover: #22c55e;
+  --retro-cyan: var(--cloudops-accent);
+  --retro-red: #f87171;
+  --retro-gold: #facc15;
+  --retro-purple: #c084fc;
+  --retro-pink: #f472b6;
+  --retro-shadow-green: rgba(74, 222, 128, 0.22);
+  --retro-shadow-green-lg: rgba(74, 222, 128, 0.14);
+  --retro-shadow-gold: rgba(250, 204, 21, 0.2);
+
+  /* Keep Tailwind utilities in sync with the same .dark boundary. */
+  --color-retro-bg: var(--cloudops-page);
+  --color-retro-surface: var(--cloudops-surface);
+  --color-retro-card: var(--cloudops-surface-raised);
+  --color-retro-text: var(--cloudops-text);
+  --color-retro-border: var(--cloudops-border);
+  --color-retro-border-strong: var(--cloudops-border-strong);
+  --color-retro-primary: var(--cloudops-accent);
+  --color-retro-secondary: #fbbf24;
+  --color-retro-accent: var(--cloudops-accent);
+  --color-retro-muted: var(--cloudops-muted);
+  --color-retro-green: #4ade80;
+  --color-retro-green-hover: #22c55e;
+  --color-retro-cyan: var(--cloudops-accent);
+  --color-retro-red: #f87171;
+  --color-retro-gold: #facc15;
+  --color-retro-purple: #c084fc;
+  --color-retro-pink: #f472b6;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+html {
+  background: var(--cloudops-page);
+}
+
+body {
+  background: var(--cloudops-page);
+  color: var(--cloudops-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
+h2,
+h3,
 p {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+.cloudops-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
+  background: var(--cloudops-page);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.cloudops-sidebar,
+.cloudops-shell > nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  min-height: 100vh;
+  z-index: 10;
+}
+
+.cloudops-main-column {
+  min-width: 0;
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cloudops-main-column > header {
+  flex: 0 0 auto;
+}
+
+.cloudops-main-content {
+  width: min(100%, 88rem);
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 3vw, 3rem) 3rem;
+  flex: 1 0 auto;
+}
+
+.dashboard-page {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.dashboard-welcome {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.dashboard-welcome h1 {
+  color: var(--cloudops-text);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.dashboard-welcome p {
+  color: var(--cloudops-muted);
+}
+
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dashboard-primary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  gap: 1.25rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.dashboard-section,
+.recent-members {
+  min-width: 0;
+}
+
+.organization-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem 1.5rem;
+  margin: 0;
+}
+
+.organization-overview-grid > div {
+  min-width: 0;
+}
+
+.organization-overview-grid dt {
+  color: var(--cloudops-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.organization-overview-grid dd {
+  color: var(--cloudops-text);
+  margin: 0.35rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.getting-started-list {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.getting-started-item,
+.checklist-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+}
+
+.getting-started-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cloudops-accent);
+}
+
+.getting-started-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.getting-started-item-coming-soon .getting-started-label {
+  color: var(--cloudops-muted);
+}
+
+.member-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.recent-members {
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.recent-members table {
+  min-width: 42rem;
+}
+
+.tenant-switcher-copy,
+.user-menu-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.tenant-switcher-copy strong,
+.user-menu-copy strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-switcher-copy small,
+.user-menu-copy small {
+  color: var(--cloudops-muted);
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .cloudops-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cloudops-sidebar,
+  .cloudops-shell > nav {
+    position: sticky;
+    top: 0;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+  }
+
+  .cloudops-main-column {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .cloudops-main-column > header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-inline: 1rem;
+  }
+
+  .cloudops-main-column > header > [role="group"] {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .cloudops-main-content {
+    padding: 1.5rem 1rem 2rem;
+  }
+
+  .dashboard-primary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-summary-grid,
+  .organization-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cloudops-main-column > header > [role="group"] {
+    justify-content: flex-start;
+    width: 100%;
+  }
 }
