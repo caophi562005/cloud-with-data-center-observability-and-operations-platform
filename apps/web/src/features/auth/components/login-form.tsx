@@ -62,69 +62,71 @@ export function LoginForm(): JSX.Element {
   };
 
   return (
-    <PixelCard
-      className="w-full max-w-md"
-      title="Welcome back"
-      description="Sign in to continue to OpsGrid."
-    >
-      <form className="grid gap-4" onSubmit={handleSubmit} noValidate>
-        {formError && (
-          <p role="alert" className="text-xs text-retro-red">
-            {formError}
-          </p>
-        )}
+    <section className="auth-form-panel" aria-label="Sign in to OpsGrid">
+      <PixelCard
+        className="w-full max-w-md"
+        title="Welcome back"
+        description="Sign in to continue to OpsGrid."
+      >
+        <form className="grid gap-4" onSubmit={handleSubmit} noValidate>
+          {formError && (
+            <p role="alert" className="text-xs text-retro-red">
+              {formError}
+            </p>
+          )}
 
-        <PixelInput
-          ref={emailRef}
-          id="login-email"
-          label="Email"
-          type="email"
-          name="email"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          onBlur={() => handleBlur("email")}
-          error={touched.email ? errors.email : undefined}
-        />
-
-        <PixelPasswordInput
-          ref={passwordRef}
-          id="login-password"
-          label="Password"
-          name="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          onBlur={() => handleBlur("password")}
-          error={touched.password ? errors.password : undefined}
-          toggleLabels={["Show password", "Hide password"]}
-        />
-
-        <div className="flex items-center justify-between gap-4">
-          <PixelCheckbox
-            id="login-remember"
-            label="Remember me"
-            checked={rememberMe}
-            onChange={setRememberMe}
-            tone="cyan"
-            disabled={isSubmitting}
+          <PixelInput
+            ref={emailRef}
+            id="login-email"
+            label="Email"
+            type="email"
+            name="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            onBlur={() => handleBlur("email")}
+            error={touched.email ? errors.email : undefined}
           />
-          <PixelTextLink
-            type="button"
-            onClick={() => console.info("Forgot password flow is not implemented in Phase 1.")}
-          >
-            Forgot password?
-          </PixelTextLink>
-        </div>
 
-        <PixelButton type="submit" fullWidth tone="cyan" loading={isSubmitting}>
-          {isSubmitting ? "Signing in..." : "Sign in"}
-        </PixelButton>
+          <PixelPasswordInput
+            ref={passwordRef}
+            id="login-password"
+            label="Password"
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onBlur={() => handleBlur("password")}
+            error={touched.password ? errors.password : undefined}
+            toggleLabels={["Show password", "Hide password"]}
+          />
 
-        <PixelDivider label="OR CONTINUE WITH" />
+          <div className="flex items-center justify-between gap-4">
+            <PixelCheckbox
+              id="login-remember"
+              label="Remember me"
+              checked={rememberMe}
+              onChange={setRememberMe}
+              tone="cyan"
+              disabled={isSubmitting}
+            />
+            <PixelTextLink
+              type="button"
+              onClick={() => console.info("Forgot password flow is not implemented in Phase 1.")}
+            >
+              Forgot password?
+            </PixelTextLink>
+          </div>
 
-        <GoogleLoginButton disabled={isSubmitting} onError={setFormError} />
-      </form>
-    </PixelCard>
+          <PixelButton type="submit" fullWidth tone="cyan" loading={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Sign in"}
+          </PixelButton>
+
+          <PixelDivider label="OR CONTINUE WITH" />
+
+          <GoogleLoginButton disabled={isSubmitting} onError={setFormError} />
+        </form>
+      </PixelCard>
+    </section>
   );
 }
