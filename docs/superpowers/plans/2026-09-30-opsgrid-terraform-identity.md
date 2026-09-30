@@ -83,7 +83,7 @@ Responsibilities:
 - Module requires Terraform `>= 1.6.0, < 2.0.0` and AWS provider `~> 6.0`.
 - Root requires the same constraints and uses `hashicorp/aws`.
 - Root backend path is exactly `terraform.tfstate` relative to the identity root.
-- Provider region expression is `var.aws_region`; the variable is defined in Task 5.
+- Provider region expression is `var.aws_region`; the variable is defined in Task 7.
 
 - [ ] **步骤 1：添加 Terraform ignore 规则。**
 
