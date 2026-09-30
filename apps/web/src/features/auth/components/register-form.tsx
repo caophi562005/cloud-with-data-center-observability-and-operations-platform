@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   PixelButton,
   PixelCard,
+  PixelDivider,
   PixelInput,
   PixelPasswordInput,
 } from "@pxlkit/ui-kit";
@@ -15,6 +16,7 @@ import {
 } from "../hooks/use-auth";
 import { validateConfirmationCode, validateRegistration } from "../auth.schema";
 import type { RegisterInput } from "../auth.types";
+import { GoogleLoginButton } from "./google-login-button";
 
 type RegistrationField =
   "email" | "displayName" | "password" | "confirmPassword";
@@ -47,6 +49,7 @@ export function RegisterForm(): JSX.Element {
   const [errors, setErrors] = useState<RegistrationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [statusMessage, setStatusMessage] = useState<string | undefined>();
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const displayNameRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -57,7 +60,8 @@ export function RegisterForm(): JSX.Element {
   const isSubmitting =
     registerMutation.isPending ||
     confirmMutation.isPending ||
-    resendMutation.isPending;
+    resendMutation.isPending ||
+    isGoogleSubmitting;
 
   useEffect(() => {
     const fields = [passwordFieldRef.current, confirmPasswordFieldRef.current];
@@ -438,6 +442,12 @@ export function RegisterForm(): JSX.Element {
               ? "Creating account..."
               : "Create account"}
           </PixelButton>
+          <PixelDivider label="OR CONTINUE WITH" />
+          <GoogleLoginButton
+            disabled={registerMutation.isPending}
+            onError={setFormError}
+            onLoadingChange={setIsGoogleSubmitting}
+          />
           <PixelButton
             type="button"
             fullWidth

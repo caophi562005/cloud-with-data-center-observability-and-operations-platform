@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   PixelButton,
   PixelCard,
+  PixelDivider,
   PixelInput,
   PixelPasswordInput,
 } from "@pxlkit/ui-kit";
@@ -10,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { isApiError } from "../../../lib/api/api-error";
 import { useLogin } from "../hooks/use-auth";
 import { validateCredentials } from "../auth.schema";
+import { GoogleLoginButton } from "./google-login-button";
 
 type FieldName = "email" | "password";
 type TouchedFields = Record<FieldName, boolean>;
@@ -24,6 +26,7 @@ function getSafeLoginError(error: unknown): string {
 export function LoginForm(): JSX.Element {
   const navigate = useNavigate();
   const loginMutation = useLogin();
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState<TouchedFields>({
@@ -35,7 +38,7 @@ export function LoginForm(): JSX.Element {
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
   const passwordFieldRef = useRef<HTMLDivElement | null>(null);
-  const isSubmitting = loginMutation.isPending;
+  const isSubmitting = loginMutation.isPending || isGoogleSubmitting;
 
   // Interop workaround for the current PxlKit password-toggle implementation.
   useEffect(() => {
@@ -172,6 +175,12 @@ export function LoginForm(): JSX.Element {
           >
             {isSubmitting ? "Signing in..." : "Sign in"}
           </PixelButton>
+          <PixelDivider label="OR CONTINUE WITH" />
+          <GoogleLoginButton
+            disabled={loginMutation.isPending}
+            onError={setFormError}
+            onLoadingChange={setIsGoogleSubmitting}
+          />
           <PixelButton
             type="button"
             fullWidth
