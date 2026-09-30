@@ -176,7 +176,7 @@
     min-width: 0;
   }
 
-  .auth-form-panel :where(input, select, textarea, button) {
+  .auth-form-panel form > button {
     width: 100%;
     max-width: 100%;
   }

@@ -7,6 +7,7 @@ import { authClient } from "../../../lib/auth/auth-client";
 type GoogleLoginButtonProps = {
   disabled?: boolean;
   onError: (message: string) => void;
+  onLoadingChange?: (loading: boolean) => void;
 };
 
 const googleMark = (
@@ -36,11 +37,12 @@ const googleMark = (
   </svg>
 );
 
-export function GoogleLoginButton({ disabled, onError }: GoogleLoginButtonProps): JSX.Element {
+export function GoogleLoginButton({ disabled, onError, onLoadingChange }: GoogleLoginButtonProps): JSX.Element {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
   const handleClick = async () => {
+    onLoadingChange?.(true);
     setLoading(true);
     try {
       await authClient.signInWithGoogle();
@@ -49,6 +51,7 @@ export function GoogleLoginButton({ disabled, onError }: GoogleLoginButtonProps)
       onError("Google sign-in could not be completed. Please try again.");
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
   };
 
