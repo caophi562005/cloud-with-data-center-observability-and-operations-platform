@@ -1,5 +1,13 @@
 import { apiFetch } from "../../../lib/api/http-client";
-import type { LoginInput, LoginResponse, MeResponse, SafeUser } from "../auth.types";
+import type {
+  ConfirmRegistrationInput,
+  LoginInput,
+  LoginResponse,
+  MeResponse,
+  RegisterInput,
+  RegistrationResponse,
+  SafeUser,
+} from "../auth.types";
 
 const JSON_HEADERS = {
   Accept: "application/json",
@@ -15,6 +23,37 @@ export async function login(input: LoginInput): Promise<SafeUser> {
   });
 
   return response.user;
+}
+
+export function register(input: RegisterInput): Promise<RegistrationResponse> {
+  return apiFetch<RegistrationResponse>("/api/v1/auth/register", {
+    method: "POST",
+    credentials: "include",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  });
+}
+
+export function confirmRegistration(
+  input: ConfirmRegistrationInput,
+): Promise<RegistrationResponse> {
+  return apiFetch<RegistrationResponse>("/api/v1/auth/register/confirm", {
+    method: "POST",
+    credentials: "include",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  });
+}
+
+export function resendConfirmationCode(
+  email: string,
+): Promise<RegistrationResponse> {
+  return apiFetch<RegistrationResponse>("/api/v1/auth/register/resend-code", {
+    method: "POST",
+    credentials: "include",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ email }),
+  });
 }
 
 export function me(): Promise<MeResponse> {

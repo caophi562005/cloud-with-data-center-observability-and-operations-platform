@@ -5,6 +5,24 @@ export type LoginInput = {
   password: string;
 };
 
+export type RegisterInput = {
+  email: string;
+  displayName: string;
+  password: string;
+  confirmPassword: string;
+};
+
+export type ConfirmRegistrationInput = {
+  email: string;
+  confirmationCode: string;
+};
+
+export type RegistrationResponse = {
+  status: "CONFIRMATION_REQUIRED" | "CONFIRMED";
+  email?: string;
+  destination?: string;
+};
+
 export type SafeUser = {
   id: string;
   email: string;

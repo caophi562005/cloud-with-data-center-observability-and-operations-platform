@@ -15,6 +15,14 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { AuthService } from './auth.service.js';
 import { CognitoAuthGuard } from './guards/cognito-auth.guard.js';
 import { loginSchema, type LoginInput } from './schemas/login.schema.js';
+import {
+  confirmRegistrationSchema,
+  registerSchema,
+  resendConfirmationSchema,
+  type ConfirmRegistrationInput,
+  type RegisterInput,
+  type ResendConfirmationInput,
+} from './schemas/registration.schema.js';
 
 @Controller()
 export class AuthController {
@@ -27,6 +35,34 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     return this.authService.login(input, response);
+  }
+
+  @Public()
+  @Post('auth/register')
+  register(@Body(new ZodValidationPipe(registerSchema)) input: RegisterInput) {
+    return this.authService.register({
+      email: input.email,
+      displayName: input.displayName,
+      password: input.password,
+    });
+  }
+
+  @Public()
+  @Post('auth/register/confirm')
+  confirmRegistration(
+    @Body(new ZodValidationPipe(confirmRegistrationSchema))
+    input: ConfirmRegistrationInput,
+  ) {
+    return this.authService.confirmRegistration(input);
+  }
+
+  @Public()
+  @Post('auth/register/resend-code')
+  resendConfirmationCode(
+    @Body(new ZodValidationPipe(resendConfirmationSchema))
+    input: ResendConfirmationInput,
+  ) {
+    return this.authService.resendRegistrationCode(input);
   }
 
   @Public()

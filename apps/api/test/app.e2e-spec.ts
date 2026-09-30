@@ -1,5 +1,10 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  INestApplication,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
@@ -120,7 +125,7 @@ type MembershipDeleteArgs = MembershipFindUniqueArgs;
 
 const TEST_CLIENT_ID = 'test-client-id';
 const TEST_WEB_URL = 'http://localhost:5173';
-const TEST_PASSWORD = 'correct-horse-battery-staple';
+const TEST_PASSWORD = 'Correct-horse-battery-123';
 const TEST_AUTH_CONFIG: AuthConfig = {
   region: 'ap-southeast-1',
   userPoolId: 'ap-southeast-1_testpool',
@@ -423,6 +428,65 @@ function createCognitoDoubles(state: TestState) {
     };
   });
 
+  const pendingRegistrations = new Map<
+    string,
+    { code: string; user: TestUser }
+  >();
+  const signUp = vi.fn(
+    async (email: string, _password: string, displayName: string) => {
+      if ([...state.usersBySub.values()].some((user) => user.email === email)) {
+        throw new ConflictException({
+          code: 'AUTH_REGISTRATION_PENDING',
+          message: 'Registration may already be pending',
+        });
+      }
+
+      const user: TestUser = {
+        id: `user-${email}`,
+        cognitoSub: `cognito-sub-${email}`,
+        email,
+        displayName,
+      };
+      state.usersBySub.set(user.cognitoSub, user);
+      state.usersById.set(user.id, user);
+      pendingRegistrations.set(email, { code: '123456', user });
+      return {
+        userConfirmed: false,
+        codeDeliveryDetails: {
+          attributeName: 'email',
+          deliveryMedium: 'EMAIL',
+          destination: 'n***@example.com',
+        },
+      };
+    },
+  );
+
+  const confirmSignUp = vi.fn(async (email: string, code: string) => {
+    const pending = pendingRegistrations.get(email);
+    if (!pending || pending.code !== code) {
+      throw new BadRequestException({
+        code: 'AUTH_CONFIRMATION_INVALID',
+        message: 'Confirmation code is invalid or expired',
+      });
+    }
+    pendingRegistrations.delete(email);
+  });
+
+  const resendConfirmationCode = vi.fn(async (email: string) => {
+    const pending = pendingRegistrations.get(email);
+    if (!pending) {
+      throw new BadRequestException({
+        code: 'AUTH_REGISTRATION_FAILED',
+        message: 'Registration could not be completed',
+      });
+    }
+    return {
+      attributeName: 'email',
+      deliveryMedium: 'EMAIL',
+      destination: 'n***@example.com',
+    };
+  });
+
   const refreshToken = vi.fn(async (refresh: string, username?: string) => {
     const session = [...sessions.values()].find(
       (candidate) => candidate.refreshToken === refresh && !candidate.revoked,
@@ -483,7 +547,14 @@ function createCognitoDoubles(state: TestState) {
   });
 
   return {
-    cognito: { signInWithPassword, refreshToken, revokeToken },
+    cognito: {
+      signInWithPassword,
+      signUp,
+      confirmSignUp,
+      resendConfirmationCode,
+      refreshToken,
+      revokeToken,
+    },
     verifier: { verifyAccessToken, verifyIdToken },
   };
 }
@@ -656,6 +727,53 @@ describe('CloudOps API contracts (e2e)', () => {
     expect(JSON.stringify(response.body)).not.toMatch(
       /DATABASE_URL|REDIS_URL|password|secret|responseTime/i,
     );
+  });
+
+  it('registers, resends, confirms, and then allows the new user to log in', async () => {
+    if (!app) {
+      throw new Error('Test application is not initialized');
+    }
+
+    const agent = request.agent(app.getHttpServer());
+    const register = await agent
+      .post('/api/v1/auth/register')
+      .send({
+        email: 'new@example.com',
+        displayName: 'New User',
+        password: TEST_PASSWORD,
+        confirmPassword: TEST_PASSWORD,
+      })
+      .expect(201);
+
+    expect(register.body).toEqual({
+      status: 'CONFIRMATION_REQUIRED',
+      email: 'new@example.com',
+      destination: 'n***@example.com',
+    });
+    expect(register.headers['set-cookie']).toBeUndefined();
+    expectSafeJson(register.body);
+
+    const resend = await agent
+      .post('/api/v1/auth/register/resend-code')
+      .send({ email: 'new@example.com' })
+      .expect(201);
+    expect(resend.body).toEqual(register.body);
+    expect(resend.headers['set-cookie']).toBeUndefined();
+
+    const confirmation = await agent
+      .post('/api/v1/auth/register/confirm')
+      .send({ email: 'new@example.com', confirmationCode: '123456' })
+      .expect(201);
+    expect(confirmation.body).toEqual({ status: 'CONFIRMED' });
+    expect(confirmation.headers['set-cookie']).toBeUndefined();
+    expectSafeJson(confirmation.body);
+
+    const login = await agent
+      .post('/api/v1/auth/login')
+      .send({ email: 'new@example.com', password: TEST_PASSWORD })
+      .expect(201);
+    expect(login.body.user.email).toBe('new@example.com');
+    expectSetCookieAttributes(cookieHeaders(login), 'access_token', '900');
   });
 
   it('logs in with safe JSON, sets protected cookies, and serves empty organizations', async () => {

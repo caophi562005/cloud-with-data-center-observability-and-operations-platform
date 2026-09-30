@@ -8,6 +8,7 @@ import type { Request, Response } from 'express';
 import { authConfig, type AuthConfig } from '../../config/auth.config.js';
 import { AUTH_COOKIE_NAMES } from '../../common/constants/auth.constants.js';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type.js';
+import type { CognitoRegistrationResult } from '../../infrastructure/aws/cognito/cognito.types.js';
 import { CognitoTokenVerifierService } from '../../infrastructure/aws/cognito/cognito-token-verifier.service.js';
 import { CognitoService } from '../../infrastructure/aws/cognito/cognito.service.js';
 import { CacheService } from '../../infrastructure/cache/cache.service.js';
@@ -17,6 +18,11 @@ import type { LocalUser } from '../users/users.repository.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthCookieService } from './auth-cookie.service.js';
 import type { LoginInput } from './schemas/login.schema.js';
+import type {
+  ConfirmRegistrationInput,
+  RegisterInput,
+  ResendConfirmationInput,
+} from './schemas/registration.schema.js';
 
 const ME_CACHE_TTL_SECONDS = 30;
 const ME_CACHE_PREFIX = 'cloudops:v1:me:';
@@ -31,6 +37,17 @@ export type SafeUser = Pick<LocalUser, 'id' | 'email' | 'displayName'>;
 export type SafeSessionResponse = {
   user: SafeUser;
 };
+
+export type RegistrationResponse = {
+  status: 'CONFIRMATION_REQUIRED' | 'CONFIRMED';
+  email?: string;
+  destination?: string;
+};
+
+type RegistrationInput = Pick<
+  RegisterInput,
+  'email' | 'displayName' | 'password'
+>;
 
 export type MeResponse = SafeSessionResponse & {
   organizations: OrganizationWithRole[];
@@ -49,6 +66,40 @@ export class AuthService {
     @Inject(authConfig.KEY)
     private readonly configuration?: AuthConfig,
   ) {}
+
+  async register(input: RegistrationInput): Promise<RegistrationResponse> {
+    const registration = await this.cognitoService.signUp(
+      input.email,
+      input.password,
+      input.displayName,
+    );
+
+    return registrationResponse(input.email, registration);
+  }
+
+  async confirmRegistration(
+    input: ConfirmRegistrationInput,
+  ): Promise<RegistrationResponse> {
+    await this.cognitoService.confirmSignUp(
+      input.email,
+      input.confirmationCode,
+    );
+    return { status: 'CONFIRMED' };
+  }
+
+  async resendRegistrationCode(
+    input: ResendConfirmationInput,
+  ): Promise<RegistrationResponse> {
+    const delivery = await this.cognitoService.resendConfirmationCode(
+      input.email,
+    );
+
+    return {
+      status: 'CONFIRMATION_REQUIRED',
+      email: input.email,
+      ...(delivery?.destination ? { destination: delivery.destination } : {}),
+    };
+  }
 
   async login(
     input: LoginInput,
@@ -185,6 +236,19 @@ export class AuthService {
 
     return result;
   }
+}
+
+function registrationResponse(
+  email: string,
+  registration: CognitoRegistrationResult,
+): RegistrationResponse {
+  return {
+    status: registration.userConfirmed ? 'CONFIRMED' : 'CONFIRMATION_REQUIRED',
+    email,
+    ...(registration.codeDeliveryDetails?.destination
+      ? { destination: registration.codeDeliveryDetails.destination }
+      : {}),
+  };
 }
 
 function toSafeUser(user: LocalUser): SafeUser {

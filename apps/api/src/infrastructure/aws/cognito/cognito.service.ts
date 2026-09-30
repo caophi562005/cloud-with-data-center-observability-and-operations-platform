@@ -1,13 +1,28 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   CognitoIdentityProviderClient,
+  ConfirmSignUpCommand,
   InitiateAuthCommand,
+  ResendConfirmationCodeCommand,
   RevokeTokenCommand,
+  SignUpCommand,
   type AuthenticationResultType,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { authConfig, type AuthConfig } from '../../../config/auth.config.js';
 import { COGNITO_AUTH_FLOWS, COGNITO_CLIENT } from './cognito.constants.js';
-import type { CognitoAuthenticationResult } from './cognito.types.js';
+import type {
+  CognitoAuthenticationResult,
+  CognitoCodeDeliveryDetails,
+  CognitoRegistrationResult,
+} from './cognito.types.js';
 import { CognitoSecretHashService } from './cognito-secret-hash.service.js';
 
 @Injectable()
@@ -18,6 +33,71 @@ export class CognitoService {
     private readonly client: CognitoIdentityProviderClient,
     private readonly secretHashService: CognitoSecretHashService,
   ) {}
+
+  async signUp(
+    email: string,
+    password: string,
+    displayName: string,
+  ): Promise<CognitoRegistrationResult> {
+    try {
+      const response = await this.client.send(
+        new SignUpCommand({
+          ClientId: this.config.clientId,
+          Username: email,
+          Password: password,
+          ...this.secretHashInput(email),
+          UserAttributes: [
+            { Name: 'email', Value: email },
+            { Name: 'name', Value: displayName },
+          ],
+        }),
+      );
+
+      const codeDeliveryDetails = mapCodeDeliveryDetails(
+        response.CodeDeliveryDetails,
+      );
+
+      return {
+        userConfirmed: response.UserConfirmed === true,
+        ...(codeDeliveryDetails ? { codeDeliveryDetails } : {}),
+      };
+    } catch (error) {
+      throw this.registrationFailure(error, 'signup');
+    }
+  }
+
+  async confirmSignUp(email: string, confirmationCode: string): Promise<void> {
+    try {
+      await this.client.send(
+        new ConfirmSignUpCommand({
+          ClientId: this.config.clientId,
+          Username: email,
+          ConfirmationCode: confirmationCode,
+          ...this.secretHashInput(email),
+        }),
+      );
+    } catch (error) {
+      throw this.registrationFailure(error, 'confirmation');
+    }
+  }
+
+  async resendConfirmationCode(
+    email: string,
+  ): Promise<CognitoCodeDeliveryDetails | undefined> {
+    try {
+      const response = await this.client.send(
+        new ResendConfirmationCodeCommand({
+          ClientId: this.config.clientId,
+          Username: email,
+          ...this.secretHashInput(email),
+        }),
+      );
+
+      return mapCodeDeliveryDetails(response.CodeDeliveryDetails);
+    } catch (error) {
+      throw this.registrationFailure(error, 'resend');
+    }
+  }
 
   async signInWithPassword(
     email: string,
@@ -94,6 +174,64 @@ export class CognitoService {
     }
   }
 
+  private secretHashInput(username: string): { SecretHash?: string } {
+    const secretHash = this.secretHashService.calculate(username);
+    return secretHash ? { SecretHash: secretHash } : {};
+  }
+
+  private registrationFailure(
+    error: unknown,
+    flow: 'signup' | 'confirmation' | 'resend',
+  ): Error {
+    const name = errorName(error);
+
+    if (name === 'UsernameExistsException') {
+      return new ConflictException({
+        code: 'AUTH_REGISTRATION_PENDING',
+        message: 'Registration may already be pending',
+      });
+    }
+
+    if (
+      name === 'CodeMismatchException' ||
+      name === 'ExpiredCodeException' ||
+      (flow === 'confirmation' && name === 'NotAuthorizedException')
+    ) {
+      return new BadRequestException({
+        code: 'AUTH_CONFIRMATION_INVALID',
+        message: 'Confirmation code is invalid or expired',
+      });
+    }
+
+    if (
+      name === 'LimitExceededException' ||
+      name === 'TooManyRequestsException'
+    ) {
+      return new HttpException(
+        {
+          code: 'RATE_LIMITED',
+          message: 'Too many requests',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (
+      name === 'InvalidPasswordException' ||
+      name === 'InvalidParameterException'
+    ) {
+      return new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+      });
+    }
+
+    return new BadRequestException({
+      code: 'AUTH_REGISTRATION_FAILED',
+      message: 'Registration could not be completed',
+    });
+  }
+
   private addSecretHash(
     authParameters: Record<string, string>,
     username: string,
@@ -137,4 +275,36 @@ export class CognitoService {
           },
     );
   }
+}
+
+function mapCodeDeliveryDetails(
+  details:
+    | {
+        AttributeName?: string;
+        DeliveryMedium?: string;
+        Destination?: string;
+      }
+    | undefined,
+): CognitoCodeDeliveryDetails | undefined {
+  if (!details) {
+    return undefined;
+  }
+
+  return {
+    ...(details.AttributeName ? { attributeName: details.AttributeName } : {}),
+    ...(details.DeliveryMedium
+      ? { deliveryMedium: details.DeliveryMedium }
+      : {}),
+    ...(details.Destination ? { destination: details.Destination } : {}),
+  };
+}
+
+function errorName(error: unknown): string | undefined {
+  return isRecord(error) && typeof error.name === 'string'
+    ? error.name
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

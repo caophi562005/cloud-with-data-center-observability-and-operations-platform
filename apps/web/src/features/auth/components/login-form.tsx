@@ -26,7 +26,10 @@ export function LoginForm(): JSX.Element {
   const loginMutation = useLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [touched, setTouched] = useState<TouchedFields>({ email: false, password: false });
+  const [touched, setTouched] = useState<TouchedFields>({
+    email: false,
+    password: false,
+  });
   const [errors, setErrors] = useState<CredentialErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const emailRef = useRef<HTMLInputElement | null>(null);
@@ -61,7 +64,10 @@ export function LoginForm(): JSX.Element {
   const handleBlur = (field: FieldName) => {
     const fieldErrors = validateCredentials({ email, password });
     setTouched((currentTouched) => ({ ...currentTouched, [field]: true }));
-    setErrors((currentErrors) => ({ ...currentErrors, [field]: fieldErrors[field] }));
+    setErrors((currentErrors) => ({
+      ...currentErrors,
+      [field]: fieldErrors[field],
+    }));
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -94,9 +100,18 @@ export function LoginForm(): JSX.Element {
         title="Welcome back"
         description="Sign in to continue to OpsGrid."
       >
-        <form className="grid gap-4" onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
+        <form
+          className="grid gap-4"
+          onSubmit={handleSubmit}
+          noValidate
+          aria-busy={isSubmitting}
+        >
           {formError && (
-            <p role="alert" aria-live="polite" className="text-xs text-retro-red">
+            <p
+              role="alert"
+              aria-live="polite"
+              className="text-xs text-retro-red"
+            >
               {formError}
             </p>
           )}
@@ -112,7 +127,9 @@ export function LoginForm(): JSX.Element {
             onChange={(event) => setEmail(event.target.value)}
             onBlur={() => handleBlur("email")}
             disabled={isSubmitting}
-            aria-describedby={touched.email && errors.email ? "login-email-error" : undefined}
+            aria-describedby={
+              touched.email && errors.email ? "login-email-error" : undefined
+            }
             error={touched.email ? errors.email : undefined}
           />
           {touched.email && errors.email && (
@@ -133,7 +150,11 @@ export function LoginForm(): JSX.Element {
               onBlur={() => handleBlur("password")}
               disabled={isSubmitting}
               error={touched.password ? errors.password : undefined}
-              aria-describedby={touched.password && errors.password ? "login-password-error" : undefined}
+              aria-describedby={
+                touched.password && errors.password
+                  ? "login-password-error"
+                  : undefined
+              }
               toggleLabels={["Show password", "Hide password"]}
             />
             {touched.password && errors.password && (
@@ -143,8 +164,23 @@ export function LoginForm(): JSX.Element {
             )}
           </div>
 
-          <PixelButton type="submit" fullWidth tone="cyan" loading={isSubmitting}>
+          <PixelButton
+            type="submit"
+            fullWidth
+            tone="cyan"
+            loading={isSubmitting}
+          >
             {isSubmitting ? "Signing in..." : "Sign in"}
+          </PixelButton>
+          <PixelButton
+            type="button"
+            fullWidth
+            tone="neutral"
+            variant="soft"
+            disabled={isSubmitting}
+            onClick={() => navigate("/register")}
+          >
+            Create an account
           </PixelButton>
         </form>
       </PixelCard>

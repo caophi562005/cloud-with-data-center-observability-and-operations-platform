@@ -20,6 +20,9 @@ type ServiceMocks = {
     signInWithPassword: ReturnType<typeof vi.fn>;
     refreshToken: ReturnType<typeof vi.fn>;
     revokeToken: ReturnType<typeof vi.fn>;
+    signUp: ReturnType<typeof vi.fn>;
+    confirmSignUp: ReturnType<typeof vi.fn>;
+    resendConfirmationCode: ReturnType<typeof vi.fn>;
   };
   verifier: {
     verifyAccessToken: ReturnType<typeof vi.fn>;
@@ -71,6 +74,9 @@ function createMocks(): ServiceMocks {
       signInWithPassword: vi.fn(),
       refreshToken: vi.fn(),
       revokeToken: vi.fn(),
+      signUp: vi.fn(),
+      confirmSignUp: vi.fn(),
+      resendConfirmationCode: vi.fn(),
     },
     verifier: {
       verifyAccessToken: vi.fn(),
@@ -122,6 +128,75 @@ function requestWithCookies(cookies: Record<string, string>): Request {
 
 describe('AuthService', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('returns confirmation-required registration data without setting auth cookies', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.signUp.mockResolvedValue({
+      userConfirmed: false,
+      codeDeliveryDetails: {
+        destination: 'p***@example.com',
+      },
+    });
+
+    await expect(
+      service.register({
+        email: 'person@example.com',
+        displayName: 'Person',
+        password: 'Correct-Horse-123',
+      }),
+    ).resolves.toEqual({
+      status: 'CONFIRMATION_REQUIRED',
+      email: 'person@example.com',
+      destination: 'p***@example.com',
+    });
+    expect(mocks.cognito.signUp).toHaveBeenCalledWith(
+      'person@example.com',
+      'Correct-Horse-123',
+      'Person',
+    );
+    expect(mocks.cookies.clearAuthCookies).not.toHaveBeenCalled();
+    expect(
+      JSON.stringify(
+        await service.register({
+          email: 'person@example.com',
+          displayName: 'Person',
+          password: 'Correct-Horse-123',
+        }),
+      ),
+    ).not.toContain('Correct-Horse-123');
+  });
+
+  it('confirms registration and resends confirmation codes without creating a session', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.confirmSignUp.mockResolvedValue(undefined);
+    mocks.cognito.resendConfirmationCode.mockResolvedValue({
+      destination: 'p***@example.com',
+    });
+
+    await expect(
+      service.confirmRegistration({
+        email: 'person@example.com',
+        confirmationCode: '123456',
+      }),
+    ).resolves.toEqual({ status: 'CONFIRMED' });
+    await expect(
+      service.resendRegistrationCode({ email: 'person@example.com' }),
+    ).resolves.toEqual({
+      status: 'CONFIRMATION_REQUIRED',
+      email: 'person@example.com',
+      destination: 'p***@example.com',
+    });
+    expect(mocks.cognito.confirmSignUp).toHaveBeenCalledWith(
+      'person@example.com',
+      '123456',
+    );
+    expect(mocks.cognito.resendConfirmationCode).toHaveBeenCalledWith(
+      'person@example.com',
+    );
+    expect(mocks.cookies.setAccessToken).not.toHaveBeenCalled();
+  });
 
   it('verifies access and ID tokens, synchronizes by Cognito sub, sets cookies, and returns safe login data', async () => {
     const mocks = createMocks();

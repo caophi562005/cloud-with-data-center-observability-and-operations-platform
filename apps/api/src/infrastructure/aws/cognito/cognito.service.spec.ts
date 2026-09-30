@@ -1,7 +1,10 @@
 import {
   CognitoIdentityProviderClient,
+  ConfirmSignUpCommand,
   InitiateAuthCommand,
+  ResendConfirmationCodeCommand,
   RevokeTokenCommand,
+  SignUpCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
@@ -26,6 +29,111 @@ function createService(config: AuthConfig = confidentialConfig) {
 }
 
 describe('CognitoService', () => {
+  it('signs up with email and display name and maps code delivery safely', async () => {
+    const { send, service } = createService();
+    send.mockResolvedValue({
+      UserConfirmed: false,
+      CodeDeliveryDetails: {
+        AttributeName: 'email',
+        DeliveryMedium: 'EMAIL',
+        Destination: 'a***@example.com',
+      },
+    });
+
+    await expect(
+      service.signUp('person@example.com', 'Correct-Horse-123', 'Person'),
+    ).resolves.toEqual({
+      userConfirmed: false,
+      codeDeliveryDetails: {
+        attributeName: 'email',
+        deliveryMedium: 'EMAIL',
+        destination: 'a***@example.com',
+      },
+    });
+
+    const command = send.mock.calls[0]?.[0];
+    expect(command).toBeInstanceOf(SignUpCommand);
+    expect(command.input).toEqual({
+      ClientId: 'client-id',
+      Username: 'person@example.com',
+      Password: 'Correct-Horse-123',
+      SecretHash: '6ASJ19bsN05kYwCegWSSsmTc/sDnaRTyyP1y/MTI8g0=',
+      UserAttributes: [
+        { Name: 'email', Value: 'person@example.com' },
+        { Name: 'name', Value: 'Person' },
+      ],
+    });
+  });
+
+  it('confirms a signup with the email confirmation code', async () => {
+    const { send, service } = createService();
+    send.mockResolvedValue({});
+
+    await expect(
+      service.confirmSignUp('person@example.com', '123456'),
+    ).resolves.toBeUndefined();
+
+    const command = send.mock.calls[0]?.[0];
+    expect(command).toBeInstanceOf(ConfirmSignUpCommand);
+    expect(command.input).toEqual({
+      ClientId: 'client-id',
+      Username: 'person@example.com',
+      ConfirmationCode: '123456',
+      SecretHash: '6ASJ19bsN05kYwCegWSSsmTc/sDnaRTyyP1y/MTI8g0=',
+    });
+  });
+
+  it('resends a signup confirmation code with safe delivery details', async () => {
+    const { send, service } = createService();
+    send.mockResolvedValue({
+      CodeDeliveryDetails: {
+        AttributeName: 'email',
+        DeliveryMedium: 'EMAIL',
+        Destination: 'a***@example.com',
+      },
+    });
+
+    await expect(
+      service.resendConfirmationCode('person@example.com'),
+    ).resolves.toEqual({
+      attributeName: 'email',
+      deliveryMedium: 'EMAIL',
+      destination: 'a***@example.com',
+    });
+
+    const command = send.mock.calls[0]?.[0];
+    expect(command).toBeInstanceOf(ResendConfirmationCodeCommand);
+    expect(command.input).toEqual({
+      ClientId: 'client-id',
+      Username: 'person@example.com',
+      SecretHash: '6ASJ19bsN05kYwCegWSSsmTc/sDnaRTyyP1y/MTI8g0=',
+    });
+  });
+
+  it('maps pending signup and invalid confirmation errors safely', async () => {
+    const { send, service } = createService();
+    send.mockRejectedValueOnce({ name: 'UsernameExistsException' });
+
+    await expect(
+      service.signUp('person@example.com', 'Correct-Horse-123', 'Person'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'AUTH_REGISTRATION_PENDING',
+        message: 'Registration may already be pending',
+      },
+    });
+
+    send.mockRejectedValueOnce({ name: 'CodeMismatchException' });
+    await expect(
+      service.confirmSignUp('person@example.com', '123456'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'AUTH_CONFIRMATION_INVALID',
+        message: 'Confirmation code is invalid or expired',
+      },
+    });
+  });
+
   it('uses USER_PASSWORD_AUTH and maps the safe authentication result', async () => {
     const { send, service } = createService();
     send.mockResolvedValue({

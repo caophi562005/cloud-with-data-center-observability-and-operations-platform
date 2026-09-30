@@ -5,6 +5,17 @@ export type CognitoAuthenticationResult = {
   expiresIn?: number;
 };
 
+export type CognitoCodeDeliveryDetails = {
+  attributeName?: string;
+  deliveryMedium?: string;
+  destination?: string;
+};
+
+export type CognitoRegistrationResult = {
+  userConfirmed: boolean;
+  codeDeliveryDetails?: CognitoCodeDeliveryDetails;
+};
+
 export type CognitoAccessTokenClaims = {
   sub: string;
   client_id: string;

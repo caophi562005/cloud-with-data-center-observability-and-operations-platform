@@ -7,8 +7,22 @@ import {
 } from "@tanstack/react-query";
 import { ApiError } from "../../../lib/api/api-error";
 import { queryKeys } from "../../../lib/query/query-keys";
-import { login, logout, me } from "../api/auth.api";
-import type { LoginInput, MeResponse, SafeUser } from "../auth.types";
+import {
+  confirmRegistration,
+  login,
+  logout,
+  me,
+  register,
+  resendConfirmationCode,
+} from "../api/auth.api";
+import type {
+  ConfirmRegistrationInput,
+  LoginInput,
+  MeResponse,
+  RegisterInput,
+  RegistrationResponse,
+  SafeUser,
+} from "../auth.types";
 
 export function useMe(): UseQueryResult<MeResponse, ApiError> {
   return useQuery<MeResponse, ApiError>({
@@ -25,6 +39,36 @@ export function useLogin(): UseMutationResult<SafeUser, ApiError, LoginInput> {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.me });
     },
+  });
+}
+
+export function useRegister(): UseMutationResult<
+  RegistrationResponse,
+  ApiError,
+  RegisterInput
+> {
+  return useMutation<RegistrationResponse, ApiError, RegisterInput>({
+    mutationFn: register,
+  });
+}
+
+export function useConfirmRegistration(): UseMutationResult<
+  RegistrationResponse,
+  ApiError,
+  ConfirmRegistrationInput
+> {
+  return useMutation<RegistrationResponse, ApiError, ConfirmRegistrationInput>({
+    mutationFn: confirmRegistration,
+  });
+}
+
+export function useResendConfirmationCode(): UseMutationResult<
+  RegistrationResponse,
+  ApiError,
+  string
+> {
+  return useMutation<RegistrationResponse, ApiError, string>({
+    mutationFn: resendConfirmationCode,
   });
 }
 

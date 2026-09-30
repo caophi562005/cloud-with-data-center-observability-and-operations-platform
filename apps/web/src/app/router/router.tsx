@@ -8,10 +8,12 @@ import { AppLayout } from "../layouts/app-layout";
 import { ProtectedRoute } from "./protected-route";
 import { DashboardPage } from "../../features/dashboard/pages/dashboard-page";
 import { LoginPage } from "../../features/auth/pages/login-page";
+import { RegisterPage } from "../../features/auth/pages/register-page";
 
 const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/dashboard" replace /> },
   { path: "/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
   {
     element: <ProtectedRoute />,
     children: [
