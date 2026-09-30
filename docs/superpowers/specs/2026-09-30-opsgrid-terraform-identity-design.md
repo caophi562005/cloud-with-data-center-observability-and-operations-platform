@@ -131,7 +131,7 @@ The client secret is never output, placed in frontend configuration, or committe
 
 ### Optional OAuth and managed login
 
-The same confidential client can later support Google and managed login. `create_user_pool_domain` is false by default in the module/root until a unique prefix is supplied. When enabled, the module:
+The same confidential client can later support Google and managed login. `create_user_pool_domain` is false by default in the module/root until a unique prefix is supplied. When enabled, the module requires a non-empty `cognito_domain_prefix` at resource precondition time and:
 
 - Creates `aws_cognito_user_pool_domain` using `cognito_domain_prefix` with managed login version 2.
 - Applies Cognito-provided managed-login branding to the confidential client with `aws_cognito_managed_login_branding`.

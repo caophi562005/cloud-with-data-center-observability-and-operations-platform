@@ -478,10 +478,17 @@ Add:
 
 ```hcl
 resource "aws_cognito_user_pool_domain" "this" {
-  count                = var.create_user_pool_domain ? 1 : 0
-  domain               = var.cognito_domain_prefix
+  count                 = var.create_user_pool_domain ? 1 : 0
+  domain                = var.cognito_domain_prefix
   managed_login_version = 2
-  user_pool_id         = aws_cognito_user_pool.this.id
+  user_pool_id          = aws_cognito_user_pool.this.id
+
+  lifecycle {
+    precondition {
+      condition     = length(trimspace(coalesce(var.cognito_domain_prefix, ""))) > 0
+      error_message = "cognito_domain_prefix must be non-empty when create_user_pool_domain is true."
+    }
+  }
 }
 
 resource "aws_cognito_managed_login_branding" "this" {
