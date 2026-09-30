@@ -43,7 +43,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
             <span className="inline-flex shrink-0 items-center justify-center text-retro-cyan">
               <AppIcon name="cloud" size={20} />
             </span>
-            <strong className="truncate text-sm text-retro-text">CloudOps</strong>
+            <strong className="truncate text-sm text-retro-text">OpsGrid</strong>
           </div>
           <TenantSwitcher />
         </div>
@@ -59,7 +59,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
           )}
         </div>
       }
-      aria-label={`CloudOps navigation for ${currentOrganization.name}`}
+      aria-label={`OpsGrid navigation for ${currentOrganization.name}`}
     />
   );
 }

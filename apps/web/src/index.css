@@ -10,7 +10,7 @@
   src: url("./assets/press-start-2p-latin.woff2") format("woff2");
 }
 
-/* CloudOps application tokens. PxlKit reads the --retro-* values below. */
+/* OpsGrid application tokens. PxlKit reads the --retro-* values below. */
 :root,
 .light {
   color-scheme: light;
