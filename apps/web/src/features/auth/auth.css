@@ -36,9 +36,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background-image:
-    linear-gradient(to right, var(--cloudops-accent-soft) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--cloudops-accent-soft) 1px, transparent 1px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M32 0H0V32' fill='none' stroke='%2339d5df' stroke-opacity='.22' stroke-width='1'/%3E%3C/svg%3E");
   background-size: 2rem 2rem;
   opacity: 0.45;
   pointer-events: none;
