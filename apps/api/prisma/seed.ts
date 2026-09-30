@@ -1,6 +1,7 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
+import { createSeedPrismaClient } from './seed-client.js';
 
-const prisma = new PrismaClient();
+const prisma = createSeedPrismaClient();
 
 async function main(): Promise<void> {
   try {
