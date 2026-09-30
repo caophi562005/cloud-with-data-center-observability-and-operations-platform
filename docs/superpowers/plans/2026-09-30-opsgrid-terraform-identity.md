@@ -239,17 +239,17 @@ variable "additional_tags" {
 }
 ```
 
-- [ ] **步骤 2：add naming and URL validation.**
+- [ ] **步骤 2：add intrinsic variable validation.**
 
-Add validation blocks that:
+Add validation blocks that can run with the declared Terraform floor `>= 1.6.0`:
 
 - Trim and accept only lowercase alphanumeric/hyphen project and environment values beginning with an alphanumeric character.
 - Require at least one callback URL and one logout URL.
 - Require every callback/logout value to match an absolute `http://` or `https://` URL without whitespace.
-- When `create_user_pool_domain` is true, require a non-null 1–63 character lowercase Cognito prefix matching `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
-- When `enable_google_identity_provider` is true, require `create_user_pool_domain = true`, a non-empty `google_client_id`, and a non-empty `google_client_secret`.
+- When supplied, require `cognito_domain_prefix` to be a non-null 1–63 character lowercase value matching `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
+- Keep `enable_google_identity_provider` as a typed boolean with no validation condition that references another variable.
 
-Use clear validation error messages that name the variable and corrective action. Do not validate a secret against a fake format.
+Do not reference other variables from variable validation conditions because Terraform versions before 1.9 reject cross-variable validation. Implement the Google/domain/credential relationship checks as resource preconditions in Task 5. Use clear validation error messages that name the variable and corrective action. Do not validate a secret against a fake format.
 
 - [ ] **步骤 3：define module locals in `main.tf`.**
 
@@ -480,6 +480,21 @@ resource "aws_cognito_identity_provider" "google" {
   attribute_mapping = {
     email = "email"
     name  = "name"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.create_user_pool_domain
+      error_message = "enable_google_identity_provider requires create_user_pool_domain to be true."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_id, ""))) > 0
+      error_message = "google_client_id must be non-empty when Google is enabled."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_secret, ""))) > 0
+      error_message = "google_client_secret must be non-empty when Google is enabled."
+    }
   }
 }
 ```
