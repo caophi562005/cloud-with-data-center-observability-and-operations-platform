@@ -70,7 +70,7 @@ Responsibilities:
 
 ---
 
-### 任务 1：建立 Terraform state 边界、目录和版本基线
+### Task 1: 建立 Terraform state 边界、目录和版本基线
 
 **文件：**
 - 修改：`.gitignore`
@@ -83,7 +83,7 @@ Responsibilities:
 - Module requires Terraform `>= 1.6.0, < 2.0.0` and AWS provider `~> 6.0`.
 - Root requires the same constraints and uses `hashicorp/aws`.
 - Root backend path is exactly `terraform.tfstate` relative to the identity root.
-- Provider region expression is `var.aws_region`; the variable is defined in Task 5.
+- Provider region expression is `var.aws_region`; the variable is defined in Task 7.
 
 - [ ] **步骤 1：添加 Terraform ignore 规则。**
 
@@ -150,7 +150,7 @@ git commit -m "chore: scaffold local Terraform identity roots"
 
 ---
 
-### 任务 2：定义 Cognito module inputs, validation, and common tags
+### Task 2: 定义 Cognito module inputs, validation, and common tags
 
 **文件：**
 - 新建：`infra/terraform/modules/cognito/variables.tf`
@@ -239,17 +239,17 @@ variable "additional_tags" {
 }
 ```
 
-- [ ] **步骤 2：add naming and URL validation.**
+- [ ] **步骤 2：add intrinsic variable validation.**
 
-Add validation blocks that:
+Add validation blocks that can run with the declared Terraform floor `>= 1.6.0`:
 
 - Trim and accept only lowercase alphanumeric/hyphen project and environment values beginning with an alphanumeric character.
 - Require at least one callback URL and one logout URL.
-- Require every callback/logout value to match an absolute `http://` or `https://` URL without whitespace.
-- When `create_user_pool_domain` is true, require a non-null 1–63 character lowercase Cognito prefix matching `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
-- When `enable_google_identity_provider` is true, require `create_user_pool_domain = true`, a non-empty `google_client_id`, and a non-empty `google_client_secret`.
+- Require every callback/logout value to use `https://` for non-localhost hosts or `http://` only for `localhost`, `127.0.0.1`, or `[::1]`, with no whitespace or URL fragment.
+- When supplied, require `cognito_domain_prefix` to be a non-null 1–63 character lowercase value matching `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
+- Keep `enable_google_identity_provider` as a typed boolean with no validation condition that references another variable.
 
-Use clear validation error messages that name the variable and corrective action. Do not validate a secret against a fake format.
+Do not reference other variables from variable validation conditions because Terraform versions before 1.9 reject cross-variable validation. Implement the Google/domain/credential relationship checks as resource preconditions in Task 5. Use clear validation error messages that name the variable and corrective action. Do not validate a secret against a fake format.
 
 - [ ] **步骤 3：define module locals in `main.tf`.**
 
@@ -298,7 +298,7 @@ git commit -m "feat: define Cognito module inputs"
 
 ---
 
-### 任务 3：实现 Cognito User Pool and development security settings
+### Task 3: 实现 Cognito User Pool and development security settings
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -323,7 +323,6 @@ resource "aws_cognito_user_pool" "this" {
   username_configuration {
     case_sensitive = false
   }
-  prevent_user_existence_errors = "ENABLED"
   account_recovery_setting {
     recovery_mechanism {
       name     = "verified_email"
@@ -343,7 +342,34 @@ resource "aws_cognito_user_pool" "this" {
     email_subject        = "Confirm your OpsGrid account"
     email_message        = "Your OpsGrid verification code is {####}."
   }
+  schema {
+    name                     = "email"
+    attribute_data_type      = "String"
+    required                 = true
+    mutable                  = true
+    string_attribute_constraints {
+      min_length = "0"
+      max_length = "2048"
+    }
+  }
+  schema {
+    name                = "name"
+    attribute_data_type = "String"
+    required            = false
+    mutable             = true
+    string_attribute_constraints {
+      min_length = "0"
+      max_length = "2048"
+    }
+  }
   tags = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = length("${var.project_name}-${var.environment}") <= 128
+      error_message = "The combined project_name-environment Cognito User Pool name must not exceed 128 characters."
+    }
+  }
 }
 ```
 
@@ -378,7 +404,7 @@ git commit -m "feat: add OpsGrid Cognito user pool"
 
 ---
 
-### 任务 4：实现 confidential App Client and custom-login authentication flows
+### Task 4: 实现 confidential App Client and custom-login authentication flows
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -436,7 +462,7 @@ git commit -m "feat: configure confidential Cognito BFF client"
 
 ---
 
-### 任务 5：实现 optional managed-login domain and Google IdP
+### Task 5: 实现 optional managed-login domain and Google IdP
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -446,19 +472,36 @@ git commit -m "feat: configure confidential Cognito BFF client"
 - Google IdP is created with `count = var.enable_google_identity_provider ? 1 : 0`.
 - Client dependency ordering remains valid when either optional resource is absent.
 
-- [ ] **步骤 1：add the Cognito domain resource.**
+- [ ] **步骤 1：add the Cognito managed-login domain and default branding.**
 
 Add:
 
 ```hcl
 resource "aws_cognito_user_pool_domain" "this" {
-  count        = var.create_user_pool_domain ? 1 : 0
-  domain       = var.cognito_domain_prefix
-  user_pool_id = aws_cognito_user_pool.this.id
+  count                 = var.create_user_pool_domain ? 1 : 0
+  domain                = var.cognito_domain_prefix
+  managed_login_version = 2
+  user_pool_id          = aws_cognito_user_pool.this.id
+
+  lifecycle {
+    precondition {
+      condition     = length(trimspace(coalesce(var.cognito_domain_prefix, ""))) > 0
+      error_message = "cognito_domain_prefix must be non-empty when create_user_pool_domain is true."
+    }
+  }
+}
+
+resource "aws_cognito_managed_login_branding" "this" {
+  count                      = var.create_user_pool_domain ? 1 : 0
+  client_id                  = aws_cognito_user_pool_client.this.id
+  use_cognito_provided_values = true
+  user_pool_id               = aws_cognito_user_pool.this.id
+
+  depends_on = [aws_cognito_user_pool_domain.this]
 }
 ```
 
-Do not create a custom certificate/domain resource; only the Cognito prefix domain is in scope.
+The branding resource applies Cognito-provided defaults so enabling the domain produces usable managed-login pages without requiring a manual branding step. Do not create a custom certificate/domain resource; only the Cognito prefix domain and default branding are in scope.
 
 - [ ] **步骤 2：add the optional Google provider.**
 
@@ -480,6 +523,21 @@ resource "aws_cognito_identity_provider" "google" {
   attribute_mapping = {
     email = "email"
     name  = "name"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.create_user_pool_domain
+      error_message = "enable_google_identity_provider requires create_user_pool_domain to be true."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_id, ""))) > 0
+      error_message = "google_client_id must be non-empty when Google is enabled."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_secret, ""))) > 0
+      error_message = "google_client_secret must be non-empty when Google is enabled."
+    }
   }
 }
 ```
@@ -510,7 +568,7 @@ git commit -m "feat: add optional Cognito OAuth domain and Google IdP"
 
 ---
 
-### 任务 6：add non-secret module outputs with conditional OAuth URLs
+### Task 6: add non-secret module outputs with conditional OAuth URLs
 
 **文件：**
 - 新建：`infra/terraform/modules/cognito/outputs.tf`
@@ -522,12 +580,12 @@ git commit -m "feat: add optional Cognito OAuth domain and Google IdP"
 
 - [ ] **步骤 1：define local URL expressions in outputs.**
 
-Use the current AWS region data source and the optional domain resource:
+Use the User Pool endpoint and the optional domain resource:
 
 ```hcl
 locals {
-  cognito_domain = var.create_user_pool_domain ? "https://${aws_cognito_user_pool_domain.this[0].domain}.auth.${data.aws_region.current.name}.amazoncognito.com" : null
-  issuer_url     = "https://cognito-idp.${data.aws_region.current.name}.amazonaws.com/${aws_cognito_user_pool.this.id}"
+  cognito_domain = var.create_user_pool_domain ? "https://${aws_cognito_user_pool_domain.this[0].domain}.auth.${data.aws_region.current.region}.amazoncognito.com" : null
+  issuer_url     = "https://${aws_cognito_user_pool.this.endpoint}"
 }
 ```
 
@@ -594,7 +652,7 @@ git commit -m "feat: expose Cognito identity outputs"
 
 ---
 
-### 任务 7：compose the dev persistent identity root
+### Task 7: compose the dev persistent identity root
 
 **文件：**
 - 新建：`infra/terraform/environments/dev/persistent/identity/variables.tf`
@@ -682,7 +740,7 @@ variable "additional_tags" {
 }
 ```
 
-Add root-side validation for `aws_region` being non-empty and for the same URL/domain/Google invariants that can be checked before passing values to the module. Keep the module as the authoritative reusable validation boundary.
+Add root-side intrinsic validation for non-empty `aws_region`, callback/logout URL shape, supplied domain-prefix shape, and supplied Google id/secret non-empty values. Do not reference other root variables from validation conditions; Google/domain relationship checks remain enforced by the module resource preconditions. Keep the module as the authoritative reusable validation boundary.
 
 - [ ] **步骤 2：compose the module.**
 
@@ -802,7 +860,7 @@ git commit -m "feat: compose dev Cognito identity environment"
 
 ---
 
-### 任务 8：write Terraform operations and security README
+### Task 8: write Terraform operations and security README
 
 **文件：**
 - 新建：`infra/terraform/README.md`
@@ -902,7 +960,7 @@ git commit -m "docs: document Terraform identity workflow"
 
 ---
 
-### 任务 9：run formatting, initialization, validation, and safety checks
+### Task 9: run formatting, initialization, validation, and safety checks
 
 **文件：**
 - Verification only; modify Terraform files only if a command identifies a concrete formatting or validation defect.

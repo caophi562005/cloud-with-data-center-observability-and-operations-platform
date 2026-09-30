@@ -99,8 +99,6 @@ The module creates one `aws_cognito_user_pool` named `${project_name}-${environm
 - Cognito-managed email sending appropriate for development.
 - Verification message configuration using a confirmation code.
 - Password minimum length of 12, with lowercase, uppercase, and numeric requirements; symbols are not mandatory for developer usability.
-- User-existence error prevention enabled.
-- Token revocation enabled.
 - Deletion protection inactive for development cleanup.
 - No `prevent_destroy` lifecycle rule.
 - No Cognito groups.
@@ -114,6 +112,8 @@ The current environment uses one server-side confidential client for the NestJS 
 
 ```hcl
 generate_secret = true
+prevent_user_existence_errors = "ENABLED"
+enable_token_revocation       = true
 ```
 
 The reusable module has an `enable_user_password_auth` switch and the development root enables it. The resulting client allows:
@@ -131,9 +131,10 @@ The client secret is never output, placed in frontend configuration, or committe
 
 ### Optional OAuth and managed login
 
-The same confidential client can later support Google and managed login. `create_user_pool_domain` is false by default in the module/root until a unique prefix is supplied. When enabled, the module:
+The same confidential client can later support Google and managed login. `create_user_pool_domain` is false by default in the module/root until a unique prefix is supplied. When enabled, the module requires a non-empty `cognito_domain_prefix` at resource precondition time and:
 
-- Creates `aws_cognito_user_pool_domain` using `cognito_domain_prefix`.
+- Creates `aws_cognito_user_pool_domain` using `cognito_domain_prefix` with managed login version 2.
+- Applies Cognito-provided managed-login branding to the confidential client with `aws_cognito_managed_login_branding`.
 - Enables OAuth for the client.
 - Allows only Authorization Code flow; implicit flow is not configured.
 - Allows only `openid`, `email`, and `profile` scopes.
@@ -182,8 +183,8 @@ The module exposes a small, purposeful interface:
 
 - `project_name`: non-empty project identifier.
 - `environment`: non-empty environment identifier.
-- `callback_urls`: absolute HTTP(S) callback URLs.
-- `logout_urls`: absolute HTTP(S) logout URLs.
+- `callback_urls`: absolute HTTP(S) callback URLs without fragments; HTTP is intended only for localhost development.
+- `logout_urls`: absolute HTTP(S) logout URLs without fragments; HTTP is intended only for localhost development.
 - `generate_secret`: confidential/public client switch; the current root sets it to `true`.
 - `enable_user_password_auth`: controls `ALLOW_USER_PASSWORD_AUTH`; current root sets it to `true`.
 - `create_user_pool_domain`: managed-login/OAuth domain switch.
@@ -224,7 +225,7 @@ The module and root output:
 - `user_pool_id`.
 - `user_pool_arn`.
 - `user_pool_client_id`.
-- `issuer_url`.
+- `issuer_url` from the User Pool's computed endpoint.
 - `cognito_domain`, `null` when disabled.
 - `oauth_authorize_url`, `null` when the domain is disabled.
 - `oauth_token_endpoint`, `null` when the domain is disabled.
