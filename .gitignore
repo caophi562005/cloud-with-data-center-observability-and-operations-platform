@@ -1,2 +1,16 @@
 .mnemon
 .worktrees/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+crash.log
+crash.*.log
+*_override.tf
+*_override.tf.json
+override.tf
+override.tf.json
+!terraform.tfvars.example
