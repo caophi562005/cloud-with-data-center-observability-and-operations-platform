@@ -81,3 +81,21 @@ resource "aws_cognito_user_pool" "this" {
     }
   }
 }
+
+resource "aws_cognito_user_pool_client" "this" {
+  name                          = "${var.project_name}-${var.environment}-bff"
+  user_pool_id                  = aws_cognito_user_pool.this.id
+  generate_secret               = var.generate_secret
+  explicit_auth_flows           = local.explicit_auth_flows
+  enable_token_revocation       = true
+  prevent_user_existence_errors = "ENABLED"
+
+  allowed_oauth_flows_user_pool_client = var.create_user_pool_domain
+  allowed_oauth_flows                  = var.create_user_pool_domain ? ["code"] : []
+  allowed_oauth_scopes                 = var.create_user_pool_domain ? ["openid", "email", "profile"] : []
+  callback_urls                        = var.create_user_pool_domain ? var.callback_urls : []
+  logout_urls                          = var.create_user_pool_domain ? var.logout_urls : []
+  supported_identity_providers         = concat(["COGNITO"], var.enable_google_identity_provider ? ["Google"] : [])
+
+  depends_on = [aws_cognito_identity_provider.google]
+}
