@@ -164,7 +164,7 @@ p {
 .cloudops-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   background: var(--cloudops-page);
 }
 

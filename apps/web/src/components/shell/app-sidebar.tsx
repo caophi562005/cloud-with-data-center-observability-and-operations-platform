@@ -1,6 +1,6 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import { PixelAvatar, PixelSidebar } from "@pxlkit/ui-kit";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { navigationSections } from "../../app/navigation/navigation.config";
 import { useTenant } from "../../app/providers/app-providers";
 import { currentUser } from "../../mocks/current-user";
@@ -9,7 +9,9 @@ import { TenantSwitcher } from "./tenant-switcher";
 
 export function AppSidebar(): JSX.Element {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { currentOrganization } = useTenant();
+  const [collapsed, setCollapsed] = useState(false);
   const sections = navigationSections
     .map((section) => ({
       label: section.label,
@@ -18,7 +20,7 @@ export function AppSidebar(): JSX.Element {
         .map((item) => ({
           id: item.id,
           label: item.label,
-          href: item.href,
+          onSelect: () => navigate(item.href),
           icon: <AppIcon name={item.icon} />,
           active: pathname === item.href,
         })),
@@ -28,7 +30,8 @@ export function AppSidebar(): JSX.Element {
   return (
     <PixelSidebar
       collapsible
-      defaultCollapsed={false}
+      collapsed={collapsed}
+      onCollapsedChange={setCollapsed}
       sections={sections}
       header={
         <div className="flex min-w-0 flex-col gap-3">
@@ -44,10 +47,12 @@ export function AppSidebar(): JSX.Element {
       footer={
         <div className="flex items-center gap-2">
           <PixelAvatar name={currentUser.name} size="sm" />
-          <span className="min-w-0">
-            <strong className="block truncate text-xs text-retro-text">{currentUser.name}</strong>
-            <small className="block text-[10px] text-retro-muted">Administrator</small>
-          </span>
+          {!collapsed && (
+            <span className="min-w-0">
+              <strong className="block truncate text-xs text-retro-text">{currentUser.name}</strong>
+              <small className="block text-[10px] text-retro-muted">Administrator</small>
+            </span>
+          )}
         </div>
       }
       aria-label={`CloudOps navigation for ${currentOrganization.name}`}
