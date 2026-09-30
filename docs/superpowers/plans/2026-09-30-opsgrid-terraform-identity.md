@@ -584,7 +584,7 @@ Use the User Pool endpoint and the optional domain resource:
 
 ```hcl
 locals {
-  cognito_domain = var.create_user_pool_domain ? "https://${aws_cognito_user_pool_domain.this[0].domain}.auth.${data.aws_region.current.name}.amazoncognito.com" : null
+  cognito_domain = var.create_user_pool_domain ? "https://${aws_cognito_user_pool_domain.this[0].domain}.auth.${data.aws_region.current.region}.amazoncognito.com" : null
   issuer_url     = "https://${aws_cognito_user_pool.this.endpoint}"
 }
 ```
