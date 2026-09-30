@@ -2,6 +2,14 @@
 @import "@pxlkit/ui-kit/styles.css";
 @source "../node_modules/@pxlkit/ui-kit";
 
+@font-face {
+  font-family: "Press Start 2P";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/press-start-2p-latin.woff2") format("woff2");
+}
+
 /* CloudOps application tokens. PxlKit reads the --retro-* values below. */
 :root,
 .light {
