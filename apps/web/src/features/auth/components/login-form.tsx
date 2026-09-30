@@ -98,8 +98,14 @@ export function LoginForm(): JSX.Element {
             onChange={(event) => setPassword(event.target.value)}
             onBlur={() => handleBlur("password")}
             error={touched.password ? errors.password : undefined}
+            aria-describedby={touched.password && errors.password ? "login-password-error" : undefined}
             toggleLabels={["Show password", "Hide password"]}
           />
+          {touched.password && errors.password && (
+            <span id="login-password-error" className="sr-only">
+              {errors.password}
+            </span>
+          )}
 
           <div className="flex items-center justify-between gap-4">
             <PixelCheckbox
