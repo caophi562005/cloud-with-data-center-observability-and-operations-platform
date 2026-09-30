@@ -81,10 +81,12 @@ The Cognito-generated confidential App Client secret is **not a Terraform output
 
 After a successful `terraform apply`, an operator must retrieve the secret through an approved AWS console or AWS CLI process and place it in an ignored local NestJS `.env` file or an approved external secret store. Phase 1 does not provision Secrets Manager; using an external store is an operator/application integration step, not a Terraform resource in this directory.
 
+If the optional Google identity provider is enabled, inject `google_client_secret` only through Terraform's `TF_VAR_google_client_secret` environment variable, populated transiently by an approved secret mechanism such as a protected CI secret variable or an approved local secret helper. Do not print, persist, or paste that value into a command, file, or captured output; unset the variable immediately after the Terraform operation. Terraform still records the supplied Google secret in state, so the state protection rules below apply.
+
 The secret must never appear in:
 
 - Git, commits, or pull requests;
-- `terraform.tfvars` checked into the repository;
+- `terraform.tfvars`, including ignored local copies;
 - frontend environment variables or browser bundles;
 - application logs, APM records, or diagnostic output; or
 - captured terminal/output files.
@@ -99,7 +101,7 @@ Open PowerShell in the deployable root:
 Set-Location infra/terraform/environments/dev/persistent/identity
 ```
 
-Copy the example variables, replace only with approved non-secret environment values, then initialize and validate:
+Copy the example variables and use `terraform.tfvars` for approved non-secret environment values only. If Google is enabled, provide its secret through the transient `TF_VAR_google_client_secret` mechanism described above; never add it to the copied file. Then initialize and validate:
 
 ```powershell
 Copy-Item terraform.tfvars.example terraform.tfvars
@@ -119,7 +121,7 @@ terraform fmt -check -recursive infra/terraform
 
 Run `plan`, `apply`, and `destroy` deliberately and review their output. The AWS provider must contact AWS for the relevant operations, so valid AWS credentials, permissions, and network access are required. `terraform init`, formatting, and local validation do not constitute a successful apply. A successful apply may be claimed only from the actual command result, not from the presence of these files or this README.
 
-`terraform.tfvars` is ignored by Git and must never be committed. Do not put the Cognito client secret, Google client secret, or any other credential in the example file, committed Terraform files, frontend configuration, or command captures.
+`terraform.tfvars` is ignored by Git, but it is not an approved secret channel: never put the Cognito client secret or Google client secret in it, even in an ignored local copy. Do not put either secret, or any other credential, in the example file, committed Terraform files, frontend configuration, or command captures.
 
 ## Future destroy order
 
