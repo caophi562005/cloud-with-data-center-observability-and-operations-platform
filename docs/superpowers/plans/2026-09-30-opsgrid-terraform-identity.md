@@ -245,7 +245,7 @@ Add validation blocks that can run with the declared Terraform floor `>= 1.6.0`:
 
 - Trim and accept only lowercase alphanumeric/hyphen project and environment values beginning with an alphanumeric character.
 - Require at least one callback URL and one logout URL.
-- Require every callback/logout value to match an absolute `http://` or `https://` URL without whitespace.
+- Require every callback/logout value to use `https://` for non-localhost hosts or `http://` only for `localhost`, `127.0.0.1`, or `[::1]`, with no whitespace or URL fragment.
 - When supplied, require `cognito_domain_prefix` to be a non-null 1–63 character lowercase value matching `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
 - Keep `enable_google_identity_provider` as a typed boolean with no validation condition that references another variable.
 
@@ -323,7 +323,6 @@ resource "aws_cognito_user_pool" "this" {
   username_configuration {
     case_sensitive = false
   }
-  prevent_user_existence_errors = "ENABLED"
   account_recovery_setting {
     recovery_mechanism {
       name     = "verified_email"
@@ -343,7 +342,34 @@ resource "aws_cognito_user_pool" "this" {
     email_subject        = "Confirm your OpsGrid account"
     email_message        = "Your OpsGrid verification code is {####}."
   }
+  schema {
+    name                     = "email"
+    attribute_data_type      = "String"
+    required                 = true
+    mutable                  = true
+    string_attribute_constraints {
+      min_length = 0
+      max_length = 2048
+    }
+  }
+  schema {
+    name                = "name"
+    attribute_data_type = "String"
+    required            = false
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 0
+      max_length = 2048
+    }
+  }
   tags = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = length("${var.project_name}-${var.environment}") <= 128
+      error_message = "The combined project_name-environment Cognito User Pool name must not exceed 128 characters."
+    }
+  }
 }
 ```
 
@@ -446,19 +472,29 @@ git commit -m "feat: configure confidential Cognito BFF client"
 - Google IdP is created with `count = var.enable_google_identity_provider ? 1 : 0`.
 - Client dependency ordering remains valid when either optional resource is absent.
 
-- [ ] **步骤 1：add the Cognito domain resource.**
+- [ ] **步骤 1：add the Cognito managed-login domain and default branding.**
 
 Add:
 
 ```hcl
 resource "aws_cognito_user_pool_domain" "this" {
-  count        = var.create_user_pool_domain ? 1 : 0
-  domain       = var.cognito_domain_prefix
-  user_pool_id = aws_cognito_user_pool.this.id
+  count                = var.create_user_pool_domain ? 1 : 0
+  domain               = var.cognito_domain_prefix
+  managed_login_version = 2
+  user_pool_id         = aws_cognito_user_pool.this.id
+}
+
+resource "aws_cognito_managed_login_branding" "this" {
+  count                      = var.create_user_pool_domain ? 1 : 0
+  client_id                  = aws_cognito_user_pool_client.this.id
+  use_cognito_provided_values = true
+  user_pool_id               = aws_cognito_user_pool.this.id
+
+  depends_on = [aws_cognito_user_pool_domain.this]
 }
 ```
 
-Do not create a custom certificate/domain resource; only the Cognito prefix domain is in scope.
+The branding resource applies Cognito-provided defaults so enabling the domain produces usable managed-login pages without requiring a manual branding step. Do not create a custom certificate/domain resource; only the Cognito prefix domain and default branding are in scope.
 
 - [ ] **步骤 2：add the optional Google provider.**
 
