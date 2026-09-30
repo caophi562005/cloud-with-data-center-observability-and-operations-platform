@@ -166,8 +166,12 @@ p {
 .cloudops-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: 14rem minmax(0, 1fr);
   background: var(--cloudops-page);
+}
+
+.cloudops-shell[data-sidebar-collapsed="true"] {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
 }
 
 .cloudops-sidebar,
@@ -369,7 +373,8 @@ p {
 }
 
 @media (max-width: 900px) {
-  .cloudops-shell {
+  .cloudops-shell,
+  .cloudops-shell[data-sidebar-collapsed="true"] {
     grid-template-columns: minmax(0, 1fr);
   }
 

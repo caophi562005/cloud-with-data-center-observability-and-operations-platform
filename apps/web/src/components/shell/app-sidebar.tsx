@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import type { JSX } from "react";
 import { PixelAvatar, PixelSidebar } from "@pxlkit/ui-kit";
 import { useLocation, useNavigate } from "react-router-dom";
 import { navigationSections } from "../../app/navigation/navigation.config";
@@ -7,11 +7,15 @@ import { currentUser } from "../../mocks/current-user";
 import { AppIcon } from "../ui/app-icon";
 import { TenantSwitcher } from "./tenant-switcher";
 
-export function AppSidebar(): JSX.Element {
+interface AppSidebarProps {
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+}
+
+export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { currentOrganization } = useTenant();
-  const [collapsed, setCollapsed] = useState(false);
   const sections = navigationSections
     .map((section) => ({
       label: section.label,
@@ -31,7 +35,7 @@ export function AppSidebar(): JSX.Element {
     <PixelSidebar
       collapsible
       collapsed={collapsed}
-      onCollapsedChange={setCollapsed}
+      onCollapsedChange={onCollapsedChange}
       sections={sections}
       header={
         <div className="flex min-w-0 flex-col gap-3">
