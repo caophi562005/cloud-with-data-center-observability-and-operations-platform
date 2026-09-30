@@ -29,9 +29,9 @@ variable "callback_urls" {
 
   validation {
     condition = alltrue([
-      for url in var.callback_urls : can(regex("^https?://[^[:space:]]+$", url))
+      for url in var.callback_urls : can(regex("^(https://[^[:space:]/?#]+([/?][^[:space:]#]*)?|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?([/?][^[:space:]#]*)?)$", url))
     ])
-    error_message = "Each callback_urls value must be an absolute http:// or https:// URL without whitespace."
+    error_message = "Each callback_urls value must use https:// for non-local hosts or http:// only for localhost, 127.0.0.1, or [::1], with no whitespace or URL fragment."
   }
 }
 
@@ -46,9 +46,9 @@ variable "logout_urls" {
 
   validation {
     condition = alltrue([
-      for url in var.logout_urls : can(regex("^https?://[^[:space:]]+$", url))
+      for url in var.logout_urls : can(regex("^(https://[^[:space:]/?#]+([/?][^[:space:]#]*)?|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?([/?][^[:space:]#]*)?)$", url))
     ])
-    error_message = "Each logout_urls value must be an absolute http:// or https:// URL without whitespace."
+    error_message = "Each logout_urls value must use https:// for non-local hosts or http:// only for localhost, 127.0.0.1, or [::1], with no whitespace or URL fragment."
   }
 }
 
