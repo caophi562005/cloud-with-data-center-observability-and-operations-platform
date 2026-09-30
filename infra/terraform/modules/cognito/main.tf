@@ -99,3 +99,59 @@ resource "aws_cognito_user_pool_client" "this" {
 
   depends_on = [aws_cognito_identity_provider.google]
 }
+
+resource "aws_cognito_user_pool_domain" "this" {
+  count                 = var.create_user_pool_domain ? 1 : 0
+  domain                = var.cognito_domain_prefix
+  managed_login_version = 2
+  user_pool_id          = aws_cognito_user_pool.this.id
+
+  lifecycle {
+    precondition {
+      condition     = length(trimspace(coalesce(var.cognito_domain_prefix, ""))) > 0
+      error_message = "cognito_domain_prefix must be non-empty when create_user_pool_domain is true."
+    }
+  }
+}
+
+resource "aws_cognito_managed_login_branding" "this" {
+  count                       = var.create_user_pool_domain ? 1 : 0
+  client_id                   = aws_cognito_user_pool_client.this.id
+  use_cognito_provided_values = true
+  user_pool_id                = aws_cognito_user_pool.this.id
+
+  depends_on = [aws_cognito_user_pool_domain.this]
+}
+
+resource "aws_cognito_identity_provider" "google" {
+  count         = var.enable_google_identity_provider ? 1 : 0
+  user_pool_id  = aws_cognito_user_pool.this.id
+  provider_name = "Google"
+  provider_type = "Google"
+
+  provider_details = {
+    authorize_scopes = "openid email profile"
+    client_id        = var.google_client_id
+    client_secret    = var.google_client_secret
+  }
+
+  attribute_mapping = {
+    email = "email"
+    name  = "name"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.create_user_pool_domain
+      error_message = "enable_google_identity_provider requires create_user_pool_domain to be true."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_id, ""))) > 0
+      error_message = "google_client_id must be non-empty when Google is enabled."
+    }
+    precondition {
+      condition     = length(trimspace(coalesce(var.google_client_secret, ""))) > 0
+      error_message = "google_client_secret must be non-empty when Google is enabled."
+    }
+  }
+}
