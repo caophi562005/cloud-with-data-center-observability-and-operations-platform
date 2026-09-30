@@ -225,7 +225,7 @@ The module and root output:
 - `user_pool_id`.
 - `user_pool_arn`.
 - `user_pool_client_id`.
-- `issuer_url`.
+- `issuer_url` from the User Pool's computed endpoint.
 - `cognito_domain`, `null` when disabled.
 - `oauth_authorize_url`, `null` when the domain is disabled.
 - `oauth_token_endpoint`, `null` when the domain is disabled.

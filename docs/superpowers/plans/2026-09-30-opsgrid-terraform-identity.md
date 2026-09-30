@@ -573,12 +573,12 @@ git commit -m "feat: add optional Cognito OAuth domain and Google IdP"
 
 - [ ] **步骤 1：define local URL expressions in outputs.**
 
-Use the current AWS region data source and the optional domain resource:
+Use the User Pool endpoint and the optional domain resource:
 
 ```hcl
 locals {
   cognito_domain = var.create_user_pool_domain ? "https://${aws_cognito_user_pool_domain.this[0].domain}.auth.${data.aws_region.current.name}.amazoncognito.com" : null
-  issuer_url     = "https://cognito-idp.${data.aws_region.current.name}.amazonaws.com/${aws_cognito_user_pool.this.id}"
+  issuer_url     = "https://${aws_cognito_user_pool.this.endpoint}"
 }
 ```
 
@@ -733,7 +733,7 @@ variable "additional_tags" {
 }
 ```
 
-Add root-side validation for `aws_region` being non-empty and for the same URL/domain/Google invariants that can be checked before passing values to the module. Keep the module as the authoritative reusable validation boundary.
+Add root-side intrinsic validation for non-empty `aws_region`, callback/logout URL shape, supplied domain-prefix shape, and supplied Google id/secret non-empty values. Do not reference other root variables from validation conditions; Google/domain relationship checks remain enforced by the module resource preconditions. Keep the module as the authoritative reusable validation boundary.
 
 - [ ] **步骤 2：compose the module.**
 
