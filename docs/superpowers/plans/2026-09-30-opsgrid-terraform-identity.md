@@ -70,7 +70,7 @@ Responsibilities:
 
 ---
 
-### 任务 1：建立 Terraform state 边界、目录和版本基线
+### Task 1: 建立 Terraform state 边界、目录和版本基线
 
 **文件：**
 - 修改：`.gitignore`
@@ -150,7 +150,7 @@ git commit -m "chore: scaffold local Terraform identity roots"
 
 ---
 
-### 任务 2：定义 Cognito module inputs, validation, and common tags
+### Task 2: 定义 Cognito module inputs, validation, and common tags
 
 **文件：**
 - 新建：`infra/terraform/modules/cognito/variables.tf`
@@ -298,7 +298,7 @@ git commit -m "feat: define Cognito module inputs"
 
 ---
 
-### 任务 3：实现 Cognito User Pool and development security settings
+### Task 3: 实现 Cognito User Pool and development security settings
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -378,7 +378,7 @@ git commit -m "feat: add OpsGrid Cognito user pool"
 
 ---
 
-### 任务 4：实现 confidential App Client and custom-login authentication flows
+### Task 4: 实现 confidential App Client and custom-login authentication flows
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -436,7 +436,7 @@ git commit -m "feat: configure confidential Cognito BFF client"
 
 ---
 
-### 任务 5：实现 optional managed-login domain and Google IdP
+### Task 5: 实现 optional managed-login domain and Google IdP
 
 **文件：**
 - 修改：`infra/terraform/modules/cognito/main.tf`
@@ -510,7 +510,7 @@ git commit -m "feat: add optional Cognito OAuth domain and Google IdP"
 
 ---
 
-### 任务 6：add non-secret module outputs with conditional OAuth URLs
+### Task 6: add non-secret module outputs with conditional OAuth URLs
 
 **文件：**
 - 新建：`infra/terraform/modules/cognito/outputs.tf`
@@ -594,7 +594,7 @@ git commit -m "feat: expose Cognito identity outputs"
 
 ---
 
-### 任务 7：compose the dev persistent identity root
+### Task 7: compose the dev persistent identity root
 
 **文件：**
 - 新建：`infra/terraform/environments/dev/persistent/identity/variables.tf`
@@ -802,7 +802,7 @@ git commit -m "feat: compose dev Cognito identity environment"
 
 ---
 
-### 任务 8：write Terraform operations and security README
+### Task 8: write Terraform operations and security README
 
 **文件：**
 - 新建：`infra/terraform/README.md`
@@ -902,7 +902,7 @@ git commit -m "docs: document Terraform identity workflow"
 
 ---
 
-### 任务 9：run formatting, initialization, validation, and safety checks
+### Task 9: run formatting, initialization, validation, and safety checks
 
 **文件：**
 - Verification only; modify Terraform files only if a command identifies a concrete formatting or validation defect.
