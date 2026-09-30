@@ -83,7 +83,7 @@ export function useTheme(): ThemeContextValue {
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
-    <PxlKitSurfaceProvider surface="linear">
+    <PxlKitSurfaceProvider surface="pixel">
       <ThemeProvider>
         <TenantProvider>{children}</TenantProvider>
       </ThemeProvider>

@@ -27,25 +27,25 @@ export function DashboardSummary({
           label="Organization"
           value={organization.name}
           tone="cyan"
-          surface="linear"
+          surface="pixel"
         />
         <PixelStatCard
           label="Members"
           value={String(memberCount)}
           tone="green"
-          surface="linear"
+          surface="pixel"
         />
         <PixelStatCard
           label="Your Role"
           value={formatRole(role)}
           tone="purple"
-          surface="linear"
+          surface="pixel"
         />
         <PixelStatCard
           label="Environment"
           value={organization.environment}
           tone="neutral"
-          surface="linear"
+          surface="pixel"
         />
       </div>
     </section>

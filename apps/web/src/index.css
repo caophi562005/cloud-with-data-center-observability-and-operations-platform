@@ -7,18 +7,19 @@
 .light {
   color-scheme: light;
 
-  --cloudops-page: #f1f5f9;
-  --cloudops-surface: #ffffff;
-  --cloudops-surface-raised: #f8fafc;
-  --cloudops-text: #0f172a;
-  --cloudops-muted: #64748b;
-  --cloudops-border: #cbd5e1;
-  --cloudops-border-strong: #94a3b8;
-  --cloudops-accent: #0891b2;
-  --cloudops-accent-hover: #0e7490;
-  --cloudops-accent-soft: rgba(8, 145, 178, 0.12);
-  --cloudops-focus: #06b6d4;
-  --cloudops-shadow: rgba(15, 23, 42, 0.12);
+  /* Parchment and ink keep the light theme retro without sacrificing contrast. */
+  --cloudops-page: #f4eedf;
+  --cloudops-surface: #fff9eb;
+  --cloudops-surface-raised: #efe3c7;
+  --cloudops-text: #211d33;
+  --cloudops-muted: #625d71;
+  --cloudops-border: #a99a7b;
+  --cloudops-border-strong: #554b63;
+  --cloudops-accent: #087f8f;
+  --cloudops-accent-hover: #066572;
+  --cloudops-accent-soft: rgba(8, 127, 143, 0.14);
+  --cloudops-focus: #006c7c;
+  --cloudops-shadow: rgba(33, 29, 51, 0.32);
 
   --retro-bg: var(--cloudops-page);
   --retro-surface: var(--cloudops-surface);
@@ -27,19 +28,19 @@
   --retro-border: var(--cloudops-border);
   --retro-border-strong: var(--cloudops-border-strong);
   --retro-primary: var(--cloudops-accent);
-  --retro-secondary: #d97706;
-  --retro-accent: var(--cloudops-accent);
+  --retro-secondary: #ae7616;
+  --retro-accent: #13785d;
   --retro-muted: var(--cloudops-muted);
-  --retro-green: #15803d;
-  --retro-green-hover: #166534;
+  --retro-green: #157a5b;
+  --retro-green-hover: #0f5e46;
   --retro-cyan: var(--cloudops-accent);
-  --retro-red: #dc2626;
-  --retro-gold: #b45309;
-  --retro-purple: #7c3aed;
-  --retro-pink: #db2777;
-  --retro-shadow-green: rgba(21, 128, 61, 0.22);
-  --retro-shadow-green-lg: rgba(21, 128, 61, 0.14);
-  --retro-shadow-gold: rgba(180, 83, 9, 0.2);
+  --retro-red: #ad3f4d;
+  --retro-gold: #a56f13;
+  --retro-purple: #66459a;
+  --retro-pink: #a2446c;
+  --retro-shadow-green: rgba(21, 122, 91, 0.35);
+  --retro-shadow-green-lg: rgba(21, 122, 91, 0.22);
+  --retro-shadow-gold: rgba(165, 111, 19, 0.3);
 
   /* Re-declare the registered Tailwind color properties for theme boundaries. */
   --color-retro-bg: var(--cloudops-page);
@@ -49,33 +50,34 @@
   --color-retro-border: var(--cloudops-border);
   --color-retro-border-strong: var(--cloudops-border-strong);
   --color-retro-primary: var(--cloudops-accent);
-  --color-retro-secondary: #d97706;
-  --color-retro-accent: var(--cloudops-accent);
+  --color-retro-secondary: #ae7616;
+  --color-retro-accent: #13785d;
   --color-retro-muted: var(--cloudops-muted);
-  --color-retro-green: #15803d;
-  --color-retro-green-hover: #166534;
+  --color-retro-green: #157a5b;
+  --color-retro-green-hover: #0f5e46;
   --color-retro-cyan: var(--cloudops-accent);
-  --color-retro-red: #dc2626;
-  --color-retro-gold: #b45309;
-  --color-retro-purple: #7c3aed;
-  --color-retro-pink: #db2777;
+  --color-retro-red: #ad3f4d;
+  --color-retro-gold: #a56f13;
+  --color-retro-purple: #66459a;
+  --color-retro-pink: #a2446c;
 }
 
 .dark {
   color-scheme: dark;
 
-  --cloudops-page: #0f172a;
-  --cloudops-surface: #111c2e;
-  --cloudops-surface-raised: #17263a;
-  --cloudops-text: #e2e8f0;
-  --cloudops-muted: #94a3b8;
-  --cloudops-border: #334155;
-  --cloudops-border-strong: #475569;
-  --cloudops-accent: #22d3ee;
-  --cloudops-accent-hover: #67e8f9;
-  --cloudops-accent-soft: rgba(34, 211, 238, 0.16);
-  --cloudops-focus: #67e8f9;
-  --cloudops-shadow: rgba(2, 6, 23, 0.45);
+  /* Navy, ink, and luminous status tones make the dark theme unmistakably retro. */
+  --cloudops-page: #071421;
+  --cloudops-surface: #0d1e2e;
+  --cloudops-surface-raised: #122a3e;
+  --cloudops-text: #e6f4f3;
+  --cloudops-muted: #95b3bb;
+  --cloudops-border: #2c4d61;
+  --cloudops-border-strong: #7194a2;
+  --cloudops-accent: #39d5df;
+  --cloudops-accent-hover: #79eff0;
+  --cloudops-accent-soft: rgba(57, 213, 223, 0.15);
+  --cloudops-focus: #79eff0;
+  --cloudops-shadow: rgba(2, 8, 18, 0.7);
 
   --retro-bg: var(--cloudops-page);
   --retro-surface: var(--cloudops-surface);
@@ -84,19 +86,19 @@
   --retro-border: var(--cloudops-border);
   --retro-border-strong: var(--cloudops-border-strong);
   --retro-primary: var(--cloudops-accent);
-  --retro-secondary: #fbbf24;
-  --retro-accent: var(--cloudops-accent);
+  --retro-secondary: #f5c957;
+  --retro-accent: #44e19a;
   --retro-muted: var(--cloudops-muted);
-  --retro-green: #4ade80;
-  --retro-green-hover: #22c55e;
+  --retro-green: #51e7a3;
+  --retro-green-hover: #2fc985;
   --retro-cyan: var(--cloudops-accent);
-  --retro-red: #f87171;
-  --retro-gold: #facc15;
-  --retro-purple: #c084fc;
-  --retro-pink: #f472b6;
-  --retro-shadow-green: rgba(74, 222, 128, 0.22);
-  --retro-shadow-green-lg: rgba(74, 222, 128, 0.14);
-  --retro-shadow-gold: rgba(250, 204, 21, 0.2);
+  --retro-red: #ff858a;
+  --retro-gold: #f6d063;
+  --retro-purple: #c3a0ff;
+  --retro-pink: #ff8ebe;
+  --retro-shadow-green: rgba(81, 231, 163, 0.36);
+  --retro-shadow-green-lg: rgba(81, 231, 163, 0.22);
+  --retro-shadow-gold: rgba(246, 208, 99, 0.3);
 
   /* Keep Tailwind utilities in sync with the same .dark boundary. */
   --color-retro-bg: var(--cloudops-page);
@@ -106,16 +108,16 @@
   --color-retro-border: var(--cloudops-border);
   --color-retro-border-strong: var(--cloudops-border-strong);
   --color-retro-primary: var(--cloudops-accent);
-  --color-retro-secondary: #fbbf24;
-  --color-retro-accent: var(--cloudops-accent);
+  --color-retro-secondary: #f5c957;
+  --color-retro-accent: #44e19a;
   --color-retro-muted: var(--cloudops-muted);
-  --color-retro-green: #4ade80;
-  --color-retro-green-hover: #22c55e;
+  --color-retro-green: #51e7a3;
+  --color-retro-green-hover: #2fc985;
   --color-retro-cyan: var(--cloudops-accent);
-  --color-retro-red: #f87171;
-  --color-retro-gold: #facc15;
-  --color-retro-purple: #c084fc;
-  --color-retro-pink: #f472b6;
+  --color-retro-red: #ff858a;
+  --color-retro-gold: #f6d063;
+  --color-retro-purple: #c3a0ff;
+  --color-retro-pink: #ff8ebe;
 }
 
 html,
@@ -132,7 +134,7 @@ html {
 body {
   background: var(--cloudops-page);
   color: var(--cloudops-text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9375rem;
   line-height: 1.5;
   font-synthesis: none;
@@ -176,6 +178,8 @@ p {
   height: 100vh;
   min-height: 100vh;
   z-index: 10;
+  border-color: var(--cloudops-border);
+  box-shadow: 3px 0 0 var(--cloudops-shadow);
 }
 
 .cloudops-main-column {
@@ -187,10 +191,14 @@ p {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--cloudops-page);
 }
 
 .cloudops-main-column > header {
   flex: 0 0 auto;
+  background: var(--cloudops-surface);
+  border-bottom: 2px solid var(--cloudops-border);
+  box-shadow: 0 3px 0 var(--cloudops-shadow);
 }
 
 .cloudops-main-content {
@@ -212,11 +220,14 @@ p {
 }
 
 .dashboard-welcome h1 {
-  color: var(--cloudops-text);
-  font-size: clamp(1.5rem, 2.5vw, 2rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+  color: var(--retro-cyan);
+  font-family: var(--font-pixel);
+  font-size: clamp(1rem, 2.2vw, 1.4rem);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1.45;
+  text-shadow: 2px 2px 0 var(--cloudops-shadow);
+  text-transform: uppercase;
 }
 
 .dashboard-welcome p {
@@ -236,6 +247,16 @@ p {
   gap: 1.25rem;
   align-items: start;
   min-width: 0;
+}
+
+/* PxlKit supplies the pixel corners; these app surfaces add crisp block depth. */
+.dashboard-summary-grid > div,
+.dashboard-page article {
+  box-shadow: 4px 4px 0 var(--cloudops-shadow);
+}
+
+.dashboard-page article header {
+  border-bottom: 2px solid var(--cloudops-border);
 }
 
 .dashboard-section,
@@ -359,6 +380,7 @@ p {
     height: auto;
     min-height: 0;
     max-width: 100%;
+    box-shadow: 0 3px 0 var(--cloudops-shadow);
   }
 
   .cloudops-main-column {
