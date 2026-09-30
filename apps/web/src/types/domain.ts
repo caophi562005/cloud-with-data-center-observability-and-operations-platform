@@ -1,29 +1,34 @@
 export type Role = "ADMIN" | "OPERATOR" | "VIEWER";
-export type MemberStatus = "ACTIVE" | "INVITED";
 
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   role: Role;
-  plan: string;
-  environment: string;
-  createdAt: string;
+}
+
+export interface OrganizationDetails {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface OrganizationUpdateInput {
+  name?: string;
+  slug?: string;
 }
 
 export interface Member {
   id: string;
+  userId: string;
   organizationId: string;
-  name: string;
+  displayName: string | null;
   email: string;
   role: Role;
-  status: MemberStatus;
 }
 
-export interface CurrentUser {
-  id: string;
-  name: string;
-  email: string;
+export interface MembershipCreateInput {
+  userId: string;
   role: Role;
 }
 

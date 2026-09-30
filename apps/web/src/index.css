@@ -226,6 +226,32 @@ p {
   min-width: 0;
 }
 
+.dashboard-state {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 2px solid var(--cloudops-border);
+  background: var(--cloudops-surface);
+  box-shadow: 4px 4px 0 var(--cloudops-shadow);
+}
+
+.dashboard-state h1 {
+  color: var(--retro-cyan);
+  font-family: var(--font-pixel);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.dashboard-state-copy {
+  color: var(--cloudops-muted);
+  max-width: 48rem;
+  overflow-wrap: anywhere;
+}
+
 .dashboard-welcome {
   display: grid;
   gap: 0.4rem;
@@ -248,7 +274,7 @@ p {
 
 .dashboard-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   min-width: 0;
 }

@@ -97,7 +97,7 @@ apps/api/
 
 `AuthService` owns authentication business flow. The Cognito adapter owns AWS SDK calls, token verification, secret hashing, and Cognito exception translation. Controllers never call AWS SDK or Prisma directly.
 
-`PrismaService` owns the database connection lifecycle. Repositories/services own queries. `RedisService` owns the Redis connection lifecycle; `CacheService` exposes a small application abstraction so feature modules do not depend on Redis client details.
+`PrismaService` owns the database connection lifecycle. Because Prisma 7.10.0 requires a runtime driver adapter, it uses `@prisma/adapter-pg` with `pg` and the configured PostgreSQL/Neon `DATABASE_URL`. Repositories/services own queries. `RedisService` owns the Redis connection lifecycle; `CacheService` exposes a small application abstraction so feature modules do not depend on Redis client details.
 
 The placeholder Observe configuration in the starter module must not run with fake credentials. Structured application logging uses Pino. The unused Observe dependency may be removed if no real Observe configuration is supplied.
 
@@ -461,6 +461,8 @@ Add to `apps/api` runtime dependencies:
 @aws-sdk/client-cognito-identity-provider
 aws-jwt-verify
 @prisma/client
+@prisma/adapter-pg
+pg
 zod
 cookie-parser
 helmet
@@ -474,6 +476,9 @@ Add to `apps/api` development dependencies:
 ```text
 prisma
 @types/cookie-parser
+tsx
+dotenv
+@types/pg
 ```
 
 Keep existing NestJS testing, Vitest, Supertest, TypeScript, Prettier, and Oxlint dependencies. Do not add Passport, JWT-signing, password-hashing, or static AWS credential packages. `@tanstack/react-query` needs no web package change.

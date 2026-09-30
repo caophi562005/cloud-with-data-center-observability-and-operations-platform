@@ -3,35 +3,36 @@ import { useEffect, useRef, useState } from "react";
 import {
   PixelButton,
   PixelCard,
-  PixelCheckbox,
-  PixelDivider,
   PixelInput,
   PixelPasswordInput,
-  PixelTextLink,
 } from "@pxlkit/ui-kit";
 import { useNavigate } from "react-router-dom";
+import { isApiError } from "../../../lib/api/api-error";
+import { useLogin } from "../hooks/use-auth";
 import { validateCredentials } from "../auth.schema";
-import { authClient } from "../../../lib/auth/auth-client";
-import { GoogleLoginButton } from "./google-login-button";
 
 type FieldName = "email" | "password";
 type TouchedFields = Record<FieldName, boolean>;
 type CredentialErrors = ReturnType<typeof validateCredentials>;
 
+const GENERIC_LOGIN_ERROR = "Sign-in could not be completed. Please try again.";
+
+function getSafeLoginError(error: unknown): string {
+  return isApiError(error) ? error.message : GENERIC_LOGIN_ERROR;
+}
+
 export function LoginForm(): JSX.Element {
   const navigate = useNavigate();
+  const loginMutation = useLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [touched, setTouched] = useState<TouchedFields>({ email: false, password: false });
   const [errors, setErrors] = useState<CredentialErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
   const passwordFieldRef = useRef<HTMLDivElement | null>(null);
-  const isAuthenticating = isSubmitting || isGoogleSubmitting;
+  const isSubmitting = loginMutation.isPending;
 
   // Interop workaround for the current PxlKit password-toggle implementation.
   useEffect(() => {
@@ -65,26 +66,24 @@ export function LoginForm(): JSX.Element {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const errors = validateCredentials({ email, password });
+    const input = { email: email.trim(), password };
+    const fieldErrors = validateCredentials(input);
     setTouched({ email: true, password: true });
-    setErrors(errors);
+    setErrors(fieldErrors);
 
-    if (Object.keys(errors).length > 0) {
+    if (Object.keys(fieldErrors).length > 0) {
       setFormError("Please correct the highlighted fields.");
-      const firstInvalidField = errors.email ? emailRef : passwordRef;
+      const firstInvalidField = fieldErrors.email ? emailRef : passwordRef;
       firstInvalidField.current?.focus();
       return;
     }
 
     setFormError(undefined);
-    setIsSubmitting(true);
     try {
-      await authClient.signIn({ email: email.trim(), password, rememberMe });
-      navigate("/dashboard");
-    } catch {
-      setFormError("Sign-in could not be completed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+      await loginMutation.mutateAsync(input);
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setFormError(getSafeLoginError(error));
     }
   };
 
@@ -95,9 +94,9 @@ export function LoginForm(): JSX.Element {
         title="Welcome back"
         description="Sign in to continue to OpsGrid."
       >
-        <form className="grid gap-4" onSubmit={handleSubmit} noValidate aria-busy={isAuthenticating}>
+        <form className="grid gap-4" onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
           {formError && (
-            <p role="alert" className="text-xs text-retro-red">
+            <p role="alert" aria-live="polite" className="text-xs text-retro-red">
               {formError}
             </p>
           )}
@@ -112,7 +111,7 @@ export function LoginForm(): JSX.Element {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             onBlur={() => handleBlur("email")}
-            disabled={isAuthenticating}
+            disabled={isSubmitting}
             aria-describedby={touched.email && errors.email ? "login-email-error" : undefined}
             error={touched.email ? errors.email : undefined}
           />
@@ -132,7 +131,7 @@ export function LoginForm(): JSX.Element {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               onBlur={() => handleBlur("password")}
-              disabled={isAuthenticating}
+              disabled={isSubmitting}
               error={touched.password ? errors.password : undefined}
               aria-describedby={touched.password && errors.password ? "login-password-error" : undefined}
               toggleLabels={["Show password", "Hide password"]}
@@ -144,35 +143,9 @@ export function LoginForm(): JSX.Element {
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-4">
-            <PixelCheckbox
-              id="login-remember"
-              label="Remember me"
-              checked={rememberMe}
-              onChange={setRememberMe}
-              tone="cyan"
-              disabled={isAuthenticating}
-            />
-            <PixelTextLink
-              type="button"
-              disabled={isAuthenticating}
-              onClick={() => console.info("Forgot password flow is not implemented in Phase 1.")}
-            >
-              Forgot password?
-            </PixelTextLink>
-          </div>
-
-          <PixelButton type="submit" fullWidth tone="cyan" loading={isSubmitting} disabled={isGoogleSubmitting}>
+          <PixelButton type="submit" fullWidth tone="cyan" loading={isSubmitting}>
             {isSubmitting ? "Signing in..." : "Sign in"}
           </PixelButton>
-
-          <PixelDivider label="OR CONTINUE WITH" />
-
-          <GoogleLoginButton
-            disabled={isSubmitting}
-            onError={setFormError}
-            onLoadingChange={setIsGoogleSubmitting}
-          />
         </form>
       </PixelCard>
     </section>

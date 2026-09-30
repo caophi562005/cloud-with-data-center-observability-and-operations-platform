@@ -1,6 +1,37 @@
-export type SignInInput = {
+import type { Role } from "../../types/domain";
+
+export type LoginInput = {
   email: string;
   password: string;
+};
+
+export type SafeUser = {
+  id: string;
+  email: string;
+  displayName: string | null;
+};
+
+export type MeOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  role: Role;
+};
+
+export type MeResponse = {
+  user: SafeUser;
+  organizations: MeOrganization[];
+};
+
+export type LoginResponse = {
+  user: SafeUser;
+};
+
+/**
+ * Legacy mock-client types are retained for compatibility with the scaffold's
+ * unused mock module. Runtime authentication uses the API hooks below instead.
+ */
+export type SignInInput = LoginInput & {
   rememberMe: boolean;
 };
 

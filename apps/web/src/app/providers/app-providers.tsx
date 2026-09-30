@@ -6,17 +6,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  PxlKitSurfaceProvider,
-  useDarkMode,
-} from "@pxlkit/ui-kit";
-import { organizations } from "../../mocks/organizations";
+import { PxlKitSurfaceProvider, useDarkMode } from "@pxlkit/ui-kit";
+import { ApiError } from "../../lib/api/api-error";
+import { useMe } from "../../features/auth/hooks/use-auth";
+import { QueryProvider } from "./query-provider";
 import type { Organization } from "../../types/domain";
 
 interface TenantContextValue {
   organizations: Organization[];
-  currentOrganization: Organization;
+  currentOrganization: Organization | null;
+  selectedOrganizationId: string | null;
   selectOrganization: (organizationId: string) => void;
+  isLoading: boolean;
+  isError: boolean;
+  error: ApiError | null;
 }
 
 interface ThemeContextValue {
@@ -38,21 +41,55 @@ function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 function TenantProvider({ children }: { children: ReactNode }) {
-  const [currentOrganization, setCurrentOrganization] = useState<Organization>(
-    organizations[0],
+  const meQuery = useMe();
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(
+    null,
   );
-  const selectOrganization = useCallback((organizationId: string) => {
-    const nextOrganization = organizations.find(
-      (organization) => organization.id === organizationId,
-    );
+  const organizations = useMemo<Organization[]>(
+    () =>
+      meQuery.data?.organizations.map((organization) => ({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        role: organization.role,
+      })) ?? [],
+    [meQuery.data?.organizations],
+  );
 
-    if (nextOrganization) {
-      setCurrentOrganization(nextOrganization);
-    }
-  }, []);
-  const value = useMemo(
-    () => ({ organizations, currentOrganization, selectOrganization }),
-    [currentOrganization, selectOrganization],
+  const currentOrganization =
+    organizations.find((organization) => organization.id === selectedOrganizationId) ??
+    organizations[0] ??
+    null;
+  const effectiveSelectedOrganizationId = currentOrganization?.id ?? null;
+
+  const selectOrganization = useCallback(
+    (organizationId: string) => {
+      if (organizations.some((organization) => organization.id === organizationId)) {
+        setSelectedOrganizationId(organizationId);
+      }
+    },
+    [organizations],
+  );
+
+  const value = useMemo<TenantContextValue>(
+    () => ({
+      organizations,
+      currentOrganization,
+      selectedOrganizationId: effectiveSelectedOrganizationId,
+      selectOrganization,
+      isLoading: meQuery.isPending,
+      isError: meQuery.isError,
+      error: meQuery.error ?? null,
+    }),
+    [
+      currentOrganization,
+      meQuery.error,
+      meQuery.isError,
+      meQuery.isPending,
+      effectiveSelectedOrganizationId,
+      organizations,
+      selectOrganization,
+    ],
   );
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
@@ -84,9 +121,11 @@ export function useTheme(): ThemeContextValue {
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <PxlKitSurfaceProvider surface="pixel">
-      <ThemeProvider>
-        <TenantProvider>{children}</TenantProvider>
-      </ThemeProvider>
+      <QueryProvider>
+        <ThemeProvider>
+          <TenantProvider>{children}</TenantProvider>
+        </ThemeProvider>
+      </QueryProvider>
     </PxlKitSurfaceProvider>
   );
 }

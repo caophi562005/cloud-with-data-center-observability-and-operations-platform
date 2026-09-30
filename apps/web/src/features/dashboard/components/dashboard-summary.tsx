@@ -17,7 +17,7 @@ export function DashboardSummary({
   role,
 }: {
   organization: Organization;
-  memberCount: number;
+  memberCount: number | null;
   role: Role;
 }) {
   return (
@@ -31,7 +31,7 @@ export function DashboardSummary({
         />
         <PixelStatCard
           label="Members"
-          value={String(memberCount)}
+          value={memberCount === null ? "—" : String(memberCount)}
           tone="green"
           surface="pixel"
         />
@@ -39,12 +39,6 @@ export function DashboardSummary({
           label="Your Role"
           value={formatRole(role)}
           tone="purple"
-          surface="pixel"
-        />
-        <PixelStatCard
-          label="Environment"
-          value={organization.environment}
-          tone="neutral"
           surface="pixel"
         />
       </div>

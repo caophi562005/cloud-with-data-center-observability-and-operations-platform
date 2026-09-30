@@ -1,4 +1,4 @@
-import type { SignInInput } from "./auth.types";
+import type { LoginInput } from "./auth.types";
 
 export function validateEmail(email: string): string | undefined {
   if (!email.trim()) return "Email is required.";
@@ -13,7 +13,7 @@ export function validatePassword(password: string): string | undefined {
 }
 
 export function validateCredentials(
-  input: Pick<SignInInput, "email" | "password">,
+  input: LoginInput,
 ): Partial<Record<"email" | "password", string>> {
   const errors: Partial<Record<"email" | "password", string>> = {};
   const emailError = validateEmail(input.email);

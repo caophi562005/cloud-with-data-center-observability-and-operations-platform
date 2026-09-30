@@ -2,8 +2,8 @@ import type { JSX } from "react";
 import { PixelAvatar, PixelSidebar } from "@pxlkit/ui-kit";
 import { useLocation, useNavigate } from "react-router-dom";
 import { navigationSections } from "../../app/navigation/navigation.config";
+import { useMe } from "../../features/auth/hooks/use-auth";
 import { useTenant } from "../../app/providers/app-providers";
-import { currentUser } from "../../mocks/current-user";
 import { AppIcon } from "../ui/app-icon";
 import { TenantSwitcher } from "./tenant-switcher";
 
@@ -12,10 +12,32 @@ interface AppSidebarProps {
   onCollapsedChange: (collapsed: boolean) => void;
 }
 
+function getDisplayName(displayName: string | null | undefined, email: string | undefined) {
+  return displayName?.trim() || email || "Account";
+}
+
+function formatRole(role: "ADMIN" | "OPERATOR" | "VIEWER" | undefined): string {
+  switch (role) {
+    case "ADMIN":
+      return "Administrator";
+    case "OPERATOR":
+      return "Operator";
+    case "VIEWER":
+      return "Viewer";
+    default:
+      return "No organization";
+  }
+}
+
 export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const meQuery = useMe();
   const { currentOrganization } = useTenant();
+  const displayName = getDisplayName(
+    meQuery.data?.user.displayName,
+    meQuery.data?.user.email,
+  );
   const sections = navigationSections
     .map((section) => ({
       label: section.label,
@@ -50,16 +72,20 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
       }
       footer={
         <div className="flex items-center gap-2">
-          <PixelAvatar name={currentUser.name} size="sm" />
+          <PixelAvatar name={displayName} size="sm" />
           {!collapsed && (
             <span className="min-w-0">
-              <strong className="block truncate text-xs text-retro-text">{currentUser.name}</strong>
-              <small className="block text-[10px] text-retro-muted">Administrator</small>
+              <strong className="block truncate text-xs text-retro-text">
+                {meQuery.isPending ? "Loading account..." : displayName}
+              </strong>
+              <small className="block text-[10px] text-retro-muted">
+                {formatRole(currentOrganization?.role)}
+              </small>
             </span>
           )}
         </div>
       }
-      aria-label={`OpsGrid navigation for ${currentOrganization.name}`}
+      aria-label={`OpsGrid navigation${currentOrganization ? ` for ${currentOrganization.name}` : ""}`}
     />
   );
 }

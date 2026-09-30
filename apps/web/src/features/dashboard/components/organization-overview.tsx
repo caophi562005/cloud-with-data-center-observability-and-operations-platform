@@ -1,4 +1,4 @@
-import { PixelBadge, PixelCard } from "@pxlkit/ui-kit";
+import { PixelCard } from "@pxlkit/ui-kit";
 import type { Organization } from "../../../types/domain";
 
 export function OrganizationOverview({ organization }: { organization: Organization }) {
@@ -12,18 +12,6 @@ export function OrganizationOverview({ organization }: { organization: Organizat
         <div>
           <dt>Slug</dt>
           <dd>{organization.slug}</dd>
-        </div>
-        <div>
-          <dt>Plan</dt>
-          <dd>
-            <PixelBadge tone="cyan" variant="soft">
-              {organization.plan}
-            </PixelBadge>
-          </dd>
-        </div>
-        <div>
-          <dt>Created</dt>
-          <dd>{organization.createdAt}</dd>
         </div>
       </dl>
     </PixelCard>
