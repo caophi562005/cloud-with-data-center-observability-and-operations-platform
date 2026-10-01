@@ -3,6 +3,7 @@ import { useState } from "react";
 import { PixelButton } from "@pxlkit/ui-kit";
 import { useNavigate } from "react-router-dom";
 import { authClient } from "../../../lib/auth/auth-client";
+import { useAuthSuccessToast } from "../auth-toast";
 
 type GoogleLoginButtonProps = {
   disabled?: boolean;
@@ -39,6 +40,7 @@ const googleMark = (
 
 export function GoogleLoginButton({ disabled, onError, onLoadingChange }: GoogleLoginButtonProps): JSX.Element {
   const navigate = useNavigate();
+  const showAuthSuccessToast = useAuthSuccessToast();
   const [loading, setLoading] = useState(false);
 
   const handleClick = async () => {
@@ -46,6 +48,7 @@ export function GoogleLoginButton({ disabled, onError, onLoadingChange }: Google
     setLoading(true);
     try {
       await authClient.signInWithGoogle();
+      showAuthSuccessToast({ kind: "login" });
       navigate("/dashboard");
     } catch {
       onError("Google sign-in could not be completed. Please try again.");

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useLogout, useMe } from "../../features/auth/hooks/use-auth";
 import { useTenant } from "../../app/providers/app-providers";
 import type { Role } from "../../types/domain";
-import { AppIcon } from "../ui/app-icon";
+import { PxlKitIcon } from "../ui/pxlkit-icon";
 
 function formatRole(role: Role): string {
   switch (role) {
@@ -47,14 +47,16 @@ export function UserMenu(): JSX.Element {
     <PixelDropdown.Root>
       <PixelDropdown.Trigger
         ariaLabel="Open user menu"
-        icon={<AppIcon name="chevron-down" />}
+        icon={<PxlKitIcon name="chevron-down" />}
         disabled={isDisabled}
       >
         <span className="flex items-center gap-2">
           <PixelAvatar name={displayName} size="sm" />
-          <span className="user-menu-copy">
-            <strong>{meQuery.isPending ? "Loading account..." : displayName}</strong>
-            <small>{roleLabel}</small>
+          <span className="flex min-w-0 flex-col items-start gap-[0.1rem] text-left">
+            <strong className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+              {meQuery.isPending ? "Loading account..." : displayName}
+            </strong>
+            <small className="text-[0.6875rem] leading-[1.25] text-retro-muted">{roleLabel}</small>
           </span>
         </span>
       </PixelDropdown.Trigger>
@@ -65,12 +67,12 @@ export function UserMenu(): JSX.Element {
             {user?.email ?? "Account details unavailable"}
           </span>
         </PixelDropdown.Header>
-        <PixelDropdown.Item value="profile" icon={<AppIcon name="user" />}>
+        <PixelDropdown.Item value="profile" icon={<PxlKitIcon name="user" />}>
           Profile
         </PixelDropdown.Item>
         <PixelDropdown.Item
           value="account-settings"
-          icon={<AppIcon name="settings" />}
+          icon={<PxlKitIcon name="settings" />}
         >
           Account settings
         </PixelDropdown.Item>

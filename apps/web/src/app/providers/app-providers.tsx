@@ -6,7 +6,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { PxlKitSurfaceProvider, useDarkMode } from "@pxlkit/ui-kit";
+import {
+  PxlKitSurfaceProvider,
+  PxlKitToastProvider,
+  useDarkMode,
+} from "@pxlkit/ui-kit";
 import { ApiError } from "../../lib/api/api-error";
 import { useMe } from "../../features/auth/hooks/use-auth";
 import { QueryProvider } from "./query-provider";
@@ -121,11 +125,13 @@ export function useTheme(): ThemeContextValue {
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <PxlKitSurfaceProvider surface="pixel">
-      <QueryProvider>
-        <ThemeProvider>
-          <TenantProvider>{children}</TenantProvider>
-        </ThemeProvider>
-      </QueryProvider>
+      <PxlKitToastProvider>
+        <QueryProvider>
+          <ThemeProvider>
+            <TenantProvider>{children}</TenantProvider>
+          </ThemeProvider>
+        </QueryProvider>
+      </PxlKitToastProvider>
     </PxlKitSurfaceProvider>
   );
 }

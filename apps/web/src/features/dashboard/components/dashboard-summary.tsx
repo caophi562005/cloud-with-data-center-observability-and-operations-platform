@@ -21,8 +21,8 @@ export function DashboardSummary({
   role: Role;
 }) {
   return (
-    <section className="dashboard-summary" aria-label="Dashboard summary">
-      <div className="dashboard-summary-grid">
+    <section aria-label="Dashboard summary">
+      <div className="grid min-w-0 grid-cols-3 gap-4 max-[1200px]:grid-cols-2 max-[640px]:grid-cols-1 [&>div]:shadow-[4px_4px_0_var(--cloudops-shadow)]">
         <PixelStatCard
           label="Organization"
           value={organization.name}

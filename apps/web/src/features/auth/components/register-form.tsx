@@ -9,6 +9,7 @@ import {
 } from "@pxlkit/ui-kit";
 import { useNavigate } from "react-router-dom";
 import { isApiError } from "../../../lib/api/api-error";
+import { useAuthSuccessToast } from "../auth-toast";
 import {
   useConfirmRegistration,
   useRegister,
@@ -35,6 +36,7 @@ function safeErrorMessage(error: unknown, fallback: string): string {
 export function RegisterForm(): JSX.Element {
   const navigate = useNavigate();
   const registerMutation = useRegister();
+  const showAuthSuccessToast = useAuthSuccessToast();
   const confirmMutation = useConfirmRegistration();
   const resendMutation = useResendConfirmationCode();
   const [mode, setMode] = useState<RegistrationMode>("register");
@@ -143,6 +145,11 @@ export function RegisterForm(): JSX.Element {
     setStatusMessage(undefined);
     try {
       const response = await registerMutation.mutateAsync(input);
+      showAuthSuccessToast({
+        kind: "registration",
+        confirmationRequired: response.status === "CONFIRMATION_REQUIRED",
+        destination: response.destination,
+      });
       if (response.status === "CONFIRMED") {
         navigate("/login", { replace: true });
         return;
@@ -188,6 +195,7 @@ export function RegisterForm(): JSX.Element {
         email,
         confirmationCode: confirmationCode.trim(),
       });
+      showAuthSuccessToast({ kind: "confirmation" });
       navigate("/login", { replace: true });
     } catch (error) {
       setFormError(safeErrorMessage(error, GENERIC_CONFIRMATION_ERROR));
@@ -212,11 +220,11 @@ export function RegisterForm(): JSX.Element {
   if (mode === "confirm") {
     return (
       <section
-        className="auth-form-panel"
+        className="flex min-h-0 min-w-0 justify-center overflow-y-auto bg-[var(--cloudops-page)] px-[clamp(1rem,5vw,5rem)] py-6 sm:py-8 lg:py-10 max-[901px]:overflow-visible max-[640px]:w-full max-[640px]:px-4 max-[640px]:py-8 max-[640px]:pb-12"
         aria-label="Confirm your OpsGrid account"
       >
         <PixelCard
-          className="w-full max-w-md"
+          className="my-auto w-full max-w-md"
           title="Confirm your account"
           description="Enter the code Cognito sent to your email."
         >
@@ -306,9 +314,12 @@ export function RegisterForm(): JSX.Element {
   }
 
   return (
-    <section className="auth-form-panel" aria-label="Create an OpsGrid account">
+    <section
+      className="flex min-h-0 min-w-0 justify-center overflow-y-auto bg-[var(--cloudops-page)] px-[clamp(1rem,5vw,5rem)] py-6 sm:py-8 lg:py-10 max-[901px]:overflow-visible max-[640px]:w-full max-[640px]:px-4 max-[640px]:py-8 max-[640px]:pb-12"
+      aria-label="Create an OpsGrid account"
+    >
       <PixelCard
-        className="w-full max-w-md"
+        className="my-auto w-full max-w-md"
         title="Create your account"
         description="Register with your Cognito email and password."
       >

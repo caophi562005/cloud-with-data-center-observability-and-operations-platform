@@ -31,6 +31,17 @@ export class OrganizationsService {
     return this.organizationsRepository.findForUser(userId);
   }
 
+  async provisionPersonalOrganization(
+    userId: string,
+    verifiedEmail: string,
+  ): Promise<void> {
+    await this.organizationsRepository.provisionPersonalOrganization(
+      userId,
+      verifiedEmail,
+    );
+    await this.deleteKeys(`${ME_CACHE_PREFIX}${userId}`);
+  }
+
   async getById(organizationId: string): Promise<OrganizationSummary> {
     const cached = await this.readCache<OrganizationSummary>(
       `${ORGANIZATION_CACHE_PREFIX}${organizationId}`,

@@ -34,6 +34,7 @@ type ServiceMocks = {
   };
   organizations: {
     findForUser: ReturnType<typeof vi.fn>;
+    provisionPersonalOrganization: ReturnType<typeof vi.fn>;
   };
   cache: {
     get: ReturnType<typeof vi.fn>;
@@ -88,6 +89,7 @@ function createMocks(): ServiceMocks {
     },
     organizations: {
       findForUser: vi.fn(),
+      provisionPersonalOrganization: vi.fn(),
     },
     cache: {
       get: vi.fn().mockResolvedValue(null),
@@ -255,6 +257,45 @@ describe('AuthService', () => {
     expect(serialized).not.toContain('access-token');
     expect(serialized).not.toContain('refresh-token');
     expect(serialized).not.toContain('password');
+  });
+
+  it('provisions a personal organization with the synchronized user and verified email after login', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    const authentication: CognitoAuthenticationResult = {
+      accessToken: 'access-token',
+      idToken: 'id-token',
+      refreshToken: 'refresh-token',
+    };
+    const verifiedEmail = 'phic0206@ut.edu.vn';
+    mocks.cognito.signInWithPassword.mockResolvedValue(authentication);
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    mocks.verifier.verifyIdToken.mockResolvedValue({
+      ...idClaims,
+      email: verifiedEmail,
+    });
+    mocks.users.upsertFromCognito.mockResolvedValue({
+      ...localUser,
+      email: verifiedEmail,
+    });
+    mocks.organizations.provisionPersonalOrganization.mockResolvedValue(
+      undefined,
+    );
+
+    await service.login(
+      { email: 'unverified-input@example.com', password: 'password' },
+      response,
+    );
+
+    expect(mocks.users.upsertFromCognito).toHaveBeenCalledWith({
+      cognitoSub: 'cognito-sub-1',
+      email: verifiedEmail,
+      displayName: 'Person',
+    });
+    expect(mocks.organizations.provisionPersonalOrganization).toHaveBeenCalledWith(
+      'user-1',
+      verifiedEmail,
+    );
   });
 
   it('does not set the internal username cookie for a public client', async () => {

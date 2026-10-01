@@ -5,7 +5,7 @@ import {
   PixelIconButton,
 } from "@pxlkit/ui-kit";
 import { useLocation } from "react-router-dom";
-import { AppIcon } from "../ui/app-icon";
+import { PxlKitIcon } from "../ui/pxlkit-icon";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
@@ -13,7 +13,7 @@ export function AppHeader(): JSX.Element {
   const { pathname } = useLocation();
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-retro-border/40 px-6 py-4">
+    <header className="flex flex-[0_0_auto] items-center justify-between gap-4 border-b-2 border-retro-border bg-retro-surface px-6 py-4 shadow-[0_3px_0_var(--cloudops-shadow)] max-[901px]:items-start max-[901px]:flex-wrap max-[901px]:px-4">
       <PixelBreadcrumb
         ariaLabel="Breadcrumb"
         items={[
@@ -25,7 +25,7 @@ export function AppHeader(): JSX.Element {
         ]}
       />
       <div
-        className="flex items-center gap-2"
+        className="flex items-center gap-2 max-[901px]:flex-wrap max-[901px]:min-w-0 max-[901px]:justify-end max-[640px]:w-full max-[640px]:justify-start"
         role="group"
         aria-label="Header actions"
       >
@@ -33,7 +33,7 @@ export function AppHeader(): JSX.Element {
           type="button"
           tone="neutral"
           variant="soft"
-          iconLeft={<AppIcon name="search" />}
+          iconLeft={<PxlKitIcon name="search" />}
         >
           <span className="flex items-center gap-3">
             <span>Search</span>
@@ -43,7 +43,7 @@ export function AppHeader(): JSX.Element {
         <PixelIconButton
           type="button"
           label="Notifications"
-          icon={<AppIcon name="bell" />}
+          icon={<PxlKitIcon name="bell" />}
         />
         <ThemeToggle />
         <UserMenu />

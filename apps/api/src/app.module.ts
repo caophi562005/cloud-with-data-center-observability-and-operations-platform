@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { CsrfOriginGuard } from './common/guards/csrf-origin.guard.js';
@@ -33,12 +33,21 @@ const GENERAL_RATE_LIMIT = 120;
       validate: parseEnv,
       load: [appConfig, authConfig, databaseConfig, redisConfig],
     }),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        redact: {
-          paths: [...loggerRedactionPaths],
-          censor: '[REDACTED]',
-        },
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const isProduction = config.getOrThrow<string>('app.nodeEnv') === 'production';
+
+        return {
+          pinoHttp: {
+            level: isProduction ? 'info' : 'silent',
+            autoLogging: isProduction,
+            redact: {
+              paths: [...loggerRedactionPaths],
+              censor: '[REDACTED]',
+            },
+          },
+        };
       },
     }),
     ThrottlerModule.forRoot({

@@ -29,7 +29,7 @@ const columns: PixelDataTableProps<Member>["columns"] = [
       const name = getMemberName(row.original);
 
       return (
-        <div className="member-cell">
+        <div className="flex min-w-max items-center gap-3 whitespace-nowrap">
           <PixelAvatar name={name} size="sm" />
           <span>{name}</span>
         </div>
@@ -46,10 +46,13 @@ const columns: PixelDataTableProps<Member>["columns"] = [
 
 export function RecentMembers({ members }: { members: Member[] }) {
   return (
-    <section className="dashboard-section recent-members">
-      <PixelCard title="Recent members">
+    <section className="min-w-0 overflow-x-auto [scrollbar-gutter:stable]">
+      <PixelCard
+        title="Recent members"
+        className="shadow-[4px_4px_0_var(--cloudops-shadow)] [&_header]:border-b-2 [&_header]:border-retro-border [&_table]:min-w-[42rem]"
+      >
         {members.length === 0 ? (
-          <p className="dashboard-state-copy" role="status">
+          <p className="text-retro-muted [overflow-wrap:anywhere]" role="status">
             No members are assigned to this organization yet.
           </p>
         ) : (

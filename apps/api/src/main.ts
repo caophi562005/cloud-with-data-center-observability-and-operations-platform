@@ -5,7 +5,7 @@ import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { Logger } from 'nestjs-pino';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor.js';
@@ -42,12 +42,18 @@ export async function configureApp(
 
 export async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
-  app.useLogger(app.get(Logger));
-
   const config = app.get(ConfigService);
+  const nodeEnv = config.getOrThrow<string>('app.nodeEnv');
+
+  if (nodeEnv === 'production') {
+    app.useLogger(app.get(PinoLogger));
+  } else {
+    app.flushLogs();
+  }
+
   await configureApp(app, {
     webUrl: config.getOrThrow<string>('app.webUrl'),
-    nodeEnv: config.getOrThrow<string>('app.nodeEnv'),
+    nodeEnv,
   });
   await app.listen(config.getOrThrow<number>('app.port'));
 }
@@ -58,8 +64,13 @@ if (isMainModule()) {
 
 function isMainModule(): boolean {
   const entrypoint = process.argv[1];
+  if (entrypoint === undefined) {
+    return false;
+  }
+
+  const entrypointUrl = pathToFileURL(entrypoint).href;
   return (
-    entrypoint !== undefined &&
-    pathToFileURL(entrypoint).href === import.meta.url
+    entrypointUrl === import.meta.url ||
+    pathToFileURL(`${entrypoint}.js`).href === import.meta.url
   );
 }

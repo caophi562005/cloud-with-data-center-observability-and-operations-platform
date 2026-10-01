@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { PixelDropdown } from "@pxlkit/ui-kit";
 import { useTenant } from "../../app/providers/app-providers";
 import type { Organization } from "../../types/domain";
-import { AppIcon } from "../ui/app-icon";
+import { PxlKitIcon } from "../ui/pxlkit-icon";
 
 function formatRole(role: Organization["role"]): string {
   switch (role) {
@@ -41,12 +41,14 @@ export function TenantSwitcher(): JSX.Element {
     <PixelDropdown.Root>
       <PixelDropdown.Trigger
         ariaLabel="Switch organization"
-        icon={<AppIcon name="chevron-down" />}
+        icon={<PxlKitIcon name="chevron-down" />}
         disabled={isLoading || isError || !hasOrganizations}
       >
-        <span className="tenant-switcher-copy">
-          <strong>{triggerTitle}</strong>
-          <small>{triggerRole}</small>
+        <span className="flex min-w-0 flex-col items-start gap-[0.1rem] text-left">
+          <strong className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+            {triggerTitle}
+          </strong>
+          <small className="text-[0.6875rem] leading-[1.25] text-retro-muted">{triggerRole}</small>
         </span>
       </PixelDropdown.Trigger>
       <PixelDropdown.Content>
@@ -70,7 +72,7 @@ export function TenantSwitcher(): JSX.Element {
               value={organization.id}
               icon={
                 organization.id === currentOrganization?.id ? (
-                  <AppIcon name="check" />
+                  <PxlKitIcon name="check" />
                 ) : undefined
               }
               onSelect={() => selectOrganization(organization.id)}
@@ -84,7 +86,7 @@ export function TenantSwitcher(): JSX.Element {
             <PixelDropdown.Separator />
             <PixelDropdown.Item
               value="organization-settings"
-              icon={<AppIcon name="settings" />}
+              icon={<PxlKitIcon name="settings" />}
             >
               Organization settings
             </PixelDropdown.Item>

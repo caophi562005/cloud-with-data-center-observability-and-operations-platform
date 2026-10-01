@@ -130,6 +130,11 @@ export class AuthService {
       ...(idClaims.name !== undefined ? { displayName: idClaims.name } : {}),
     });
 
+    await this.organizationsService.provisionPersonalOrganization(
+      user.id,
+      user.email,
+    );
+
     this.authCookieService.setAccessToken(response, authentication.accessToken);
     if (authentication.refreshToken) {
       this.authCookieService.setRefreshToken(

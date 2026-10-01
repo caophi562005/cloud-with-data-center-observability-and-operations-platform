@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { navigationSections } from "../../app/navigation/navigation.config";
 import { useMe } from "../../features/auth/hooks/use-auth";
 import { useTenant } from "../../app/providers/app-providers";
-import { AppIcon } from "../ui/app-icon";
+import { PxlKitIcon } from "../ui/pxlkit-icon";
 import { TenantSwitcher } from "./tenant-switcher";
 
 interface AppSidebarProps {
@@ -47,7 +47,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
           id: item.id,
           label: item.label,
           onSelect: () => navigate(item.href),
-          icon: <AppIcon name={item.icon} />,
+          icon: <PxlKitIcon name={item.icon} />,
           active: pathname === item.href,
         })),
     }))
@@ -55,6 +55,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
 
   return (
     <PixelSidebar
+      className="sticky top-0 z-10 h-screen min-h-screen border-retro-border shadow-[3px_0_0_var(--cloudops-shadow)] max-[901px]:h-auto max-[901px]:min-h-0 max-[901px]:max-w-full max-[901px]:shadow-[0_3px_0_var(--cloudops-shadow)]"
       collapsible
       collapsed={collapsed}
       onCollapsedChange={onCollapsedChange}
@@ -63,7 +64,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="inline-flex shrink-0 items-center justify-center text-retro-cyan">
-              <AppIcon name="cloud" size={20} />
+              <PxlKitIcon name="cloud" size={20} />
             </span>
             <strong className="truncate text-sm text-retro-text">OpsGrid</strong>
           </div>

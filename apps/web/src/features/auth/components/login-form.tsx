@@ -8,7 +8,8 @@ import {
   PixelPasswordInput,
 } from "@pxlkit/ui-kit";
 import { useNavigate } from "react-router-dom";
-import { isApiError } from "../../../lib/api/api-error";
+import { useAuthErrorToast, useAuthSuccessToast } from "../auth-toast";
+import { getSafeLoginErrorMessage } from "../auth-toast-messages";
 import { useLogin } from "../hooks/use-auth";
 import { validateCredentials } from "../auth.schema";
 import { GoogleLoginButton } from "./google-login-button";
@@ -17,15 +18,11 @@ type FieldName = "email" | "password";
 type TouchedFields = Record<FieldName, boolean>;
 type CredentialErrors = ReturnType<typeof validateCredentials>;
 
-const GENERIC_LOGIN_ERROR = "Sign-in could not be completed. Please try again.";
-
-function getSafeLoginError(error: unknown): string {
-  return isApiError(error) ? error.message : GENERIC_LOGIN_ERROR;
-}
-
 export function LoginForm(): JSX.Element {
   const navigate = useNavigate();
   const loginMutation = useLogin();
+  const showAuthSuccessToast = useAuthSuccessToast();
+  const showAuthErrorToast = useAuthErrorToast();
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -90,16 +87,22 @@ export function LoginForm(): JSX.Element {
     setFormError(undefined);
     try {
       await loginMutation.mutateAsync(input);
+      showAuthSuccessToast({ kind: "login" });
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      setFormError(getSafeLoginError(error));
+      const safeMessage = getSafeLoginErrorMessage(error);
+      setFormError(safeMessage);
+      showAuthErrorToast({ kind: "login-error", apiMessage: safeMessage });
     }
   };
 
   return (
-    <section className="auth-form-panel" aria-label="Sign in to OpsGrid">
+    <section
+      className="flex min-h-0 min-w-0 justify-center overflow-y-auto bg-[var(--cloudops-page)] px-[clamp(1rem,5vw,5rem)] py-6 sm:py-8 lg:py-10 max-[901px]:overflow-visible max-[640px]:w-full max-[640px]:px-4 max-[640px]:py-8 max-[640px]:pb-12"
+      aria-label="Sign in to OpsGrid"
+    >
       <PixelCard
-        className="w-full max-w-md"
+        className="my-auto w-full max-w-md"
         title="Welcome back"
         description="Sign in to continue to OpsGrid."
       >

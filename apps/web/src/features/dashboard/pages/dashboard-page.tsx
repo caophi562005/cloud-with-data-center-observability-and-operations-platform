@@ -19,9 +19,15 @@ function DashboardState({
   role?: "status" | "alert";
 }): JSX.Element {
   return (
-    <section className="dashboard-state" role={role} aria-live="polite">
-      <h1>{title}</h1>
-      <p className="dashboard-state-copy">{message}</p>
+    <section
+      className="grid min-w-0 gap-3 border-2 border-retro-border bg-retro-surface p-[clamp(1.5rem,4vw,3rem)] shadow-[4px_4px_0_var(--cloudops-shadow)]"
+      role={role}
+      aria-live="polite"
+    >
+      <h1 className="text-retro-cyan font-[var(--font-pixel)] text-[clamp(1rem,2vw,1.25rem)] font-normal leading-normal uppercase [overflow-wrap:anywhere]">
+        {title}
+      </h1>
+      <p className="max-w-3xl text-retro-muted [overflow-wrap:anywhere]">{message}</p>
     </section>
   );
 }
@@ -38,7 +44,7 @@ export function DashboardPage(): JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="dashboard-page">
+      <div className="grid min-w-0 gap-6">
         <DashboardState
           title="Loading your workspace"
           message="We are loading your organizations and access details."
@@ -49,7 +55,7 @@ export function DashboardPage(): JSX.Element {
 
   if (isError) {
     return (
-      <div className="dashboard-page">
+      <div className="grid min-w-0 gap-6">
         <DashboardState
           title="Workspace unavailable"
           message="We could not load your organization access. Please try again later."
@@ -61,7 +67,7 @@ export function DashboardPage(): JSX.Element {
 
   if (!currentOrganization) {
     return (
-      <div className="dashboard-page">
+      <div className="grid min-w-0 gap-6">
         <DashboardState
           title="No organization access"
           message="Your account is signed in, but it is not assigned to an organization yet."
@@ -75,7 +81,7 @@ export function DashboardPage(): JSX.Element {
   const members = membersQuery.data ?? [];
 
   return (
-    <div className="dashboard-page">
+    <div className="grid min-w-0 gap-6">
       <DashboardWelcome
         firstName={firstName}
         organizationName={currentOrganization.name}
@@ -85,7 +91,7 @@ export function DashboardPage(): JSX.Element {
         memberCount={membersQuery.data ? members.length : null}
         role={currentOrganization.role}
       />
-      <div className="dashboard-primary-grid">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] items-start gap-5 max-[901px]:grid-cols-[minmax(0,1fr)]">
         <OrganizationOverview organization={currentOrganization} />
         <GettingStarted items={gettingStartedItems} />
       </div>
