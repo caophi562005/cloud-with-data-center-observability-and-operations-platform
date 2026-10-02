@@ -1,0 +1,23 @@
+local.file "agent_credential" {
+  filename  = "__CREDENTIAL_FILE__"
+  is_secret = true
+}
+
+prometheus.exporter.unix "host" {
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.remote_write.ingestion.receiver]
+  scrape_interval = "15s"
+}
+
+prometheus.remote_write "ingestion" {
+  endpoint {
+    url = "https://ingest.cloudops.example.com/api/v1/write"
+    authorization {
+      type        = "Bearer"
+      credentials = local.file.agent_credential.content
+    }
+  }
+}
