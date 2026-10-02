@@ -1024,6 +1024,54 @@ safe_alloy_binary_path() {
   printf '%s' "$resolved"
 }
 
+# Grafana's Debian/RPM package starts Alloy through a fixed vendor wrapper
+# (currently /usr/lib/alloy/alloy-wrapper). The wrapper ultimately execs the
+# real binary, so keep the wrapper allowlisted but return the real binary for
+# validation. Never accept an arbitrary executable path from ExecStart.
+safe_alloy_wrapper_path() {
+  local candidate="$1"
+  local resolved=''
+
+  case "$candidate" in
+    /usr/lib/alloy/alloy-wrapper|/usr/libexec/alloy/alloy-wrapper|/opt/alloy/bin/alloy-wrapper)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  if [[ ! "$candidate" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ -L "$candidate" ]] || [[ ! -f "$candidate" ]]; then
+    return 1
+  fi
+  if ! resolved="$(realpath -e -- "$candidate" 2>/dev/null)" || [[ "$resolved" != "$candidate" ]]; then
+    return 1
+  fi
+  if [[ ! -x "$resolved" ]]; then
+    return 1
+  fi
+  printf '%s' "$resolved"
+}
+
+get_alloy_wrapper_binary() {
+  local wrapper_path="$1"
+  local candidate=''
+  local resolved=''
+
+  if ! safe_alloy_wrapper_path "$wrapper_path" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  # These are the fixed vendor layouts supported by the installer. The
+  # official wrapper defaults to /usr/bin/alloy; the other paths cover the
+  # existing portable layouts already accepted by this installer.
+  for candidate in /usr/bin/alloy /usr/local/bin/alloy /opt/alloy/bin/alloy; do
+    if resolved="$(safe_alloy_binary_path "$candidate" 2>/dev/null)"; then
+      printf '%s' "$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
 safe_alloy_service_file() {
   local candidate="$1"
   local resolved=''
@@ -1073,6 +1121,7 @@ get_alloy_execstart_from_service_file() {
   local line=''
   local value=''
   local resolved=''
+  local wrapper_path=''
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
@@ -1091,6 +1140,11 @@ get_alloy_execstart_from_service_file() {
           printf '%s' "$resolved"
           return 0
         fi
+        if wrapper_path="$(safe_alloy_wrapper_path "$value" 2>/dev/null)" \
+            && resolved="$(get_alloy_wrapper_binary "$wrapper_path" 2>/dev/null)"; then
+          printf '%s' "$resolved"
+          return 0
+        fi
         ;;
     esac
   done < "$service_file"
@@ -1102,6 +1156,7 @@ get_alloy_execstart_from_metadata() {
   local path_pattern='path=([^[:space:];]+)'
   local value=''
   local resolved=''
+  local wrapper_path=''
 
   if ! metadata="$(systemctl show alloy.service --property=ExecStart --value 2>/dev/null)"; then
     return 1
@@ -1109,6 +1164,11 @@ get_alloy_execstart_from_metadata() {
   if [[ "$metadata" =~ $path_pattern ]]; then
     value="${BASH_REMATCH[1]}"
     if resolved="$(safe_alloy_binary_path "$value" 2>/dev/null)"; then
+      printf '%s' "$resolved"
+      return 0
+    fi
+    if wrapper_path="$(safe_alloy_wrapper_path "$value" 2>/dev/null)" \
+        && resolved="$(get_alloy_wrapper_binary "$wrapper_path" 2>/dev/null)"; then
       printf '%s' "$resolved"
       return 0
     fi
