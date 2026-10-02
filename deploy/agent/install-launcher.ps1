@@ -17,20 +17,20 @@ function Write-LauncherUsage {
     Write-LauncherLog '  -Help         Show this help text'
 }
 
-function Get-LauncherArguments {
+function Get-LauncherArguments([string[]]$Arguments) {
     $token = $null
     $showHelp = $false
-    for ($index = 0; $index -lt $args.Count; $index++) {
-        $argument = [string]$args[$index]
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        $argument = [string]$Arguments[$index]
         if ([string]::Equals($argument, '-Help', [System.StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($argument, '-h', [System.StringComparison]::OrdinalIgnoreCase)) {
             $showHelp = $true
             continue
         }
         if ([string]::Equals($argument, '-Token', [System.StringComparison]::OrdinalIgnoreCase)) {
-            if (($index + 1) -ge $args.Count) { throw [System.ArgumentException]::new('invalid launcher arguments') }
+            if (($index + 1) -ge $Arguments.Count) { throw [System.ArgumentException]::new('invalid launcher arguments') }
             $index++
-            $token = [string]$args[$index]
+            $token = [string]$Arguments[$index]
             continue
         }
         if ($argument.StartsWith('-Token=', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -102,7 +102,7 @@ function Remove-LauncherTempRoot {
 }
 
 try {
-    $parsed = Get-LauncherArguments
+    $parsed = Get-LauncherArguments -Arguments $args
     if ($parsed.Help) {
         Write-LauncherUsage
         exit 0
