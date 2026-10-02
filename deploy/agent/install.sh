@@ -1970,7 +1970,9 @@ validate_alloy_config() {
   if [[ -z "$ALLOY_BINARY_PATH" || ! -x "$ALLOY_BINARY_PATH" || -z "$TASK4_CONFIG_STAGE" || ! -f "$TASK4_CONFIG_STAGE" || -L "$TASK4_CONFIG_STAGE" ]]; then
     return 1
   fi
-  "$ALLOY_BINARY_PATH" validate --config.file="$TASK4_CONFIG_STAGE" >/dev/null 2>&1
+  # Grafana Alloy's validate command takes the config path positionally;
+  # --config.file is a run-mode flag and is rejected by the vendor CLI.
+  "$ALLOY_BINARY_PATH" validate "$TASK4_CONFIG_STAGE" >/dev/null 2>&1
 }
 
 task4_restore_file() {
