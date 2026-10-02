@@ -636,6 +636,55 @@ secure_artifact_directory() {
   return 0
 }
 
+# The official Grafana Debian/RPM package creates /etc/alloy as root:alloy
+# with mode 0770 so the vendor service can traverse its config directory. Keep
+# accepting only that exact directory, the observed Alloy service group, and
+# no permissions for other users; all other artifact directories retain the
+# stricter root:root validation above.
+secure_alloy_config_directory() {
+  local directory="$1"
+  local expected_group='root'
+  local expected_gid='0'
+  local canonical=''
+  local metadata=''
+  local uid=''
+  local gid=''
+  local mode=''
+  local group_digit=''
+  local other_digit=''
+
+  if [[ "$directory" != "${ALLOY_CONFIG_FILE%/*}" || -L "$directory" || ! -d "$directory" ]]; then
+    return 1
+  fi
+  if ! canonical="$(realpath -e -- "$directory" 2>/dev/null)" || [[ "$canonical" != "$directory" ]]; then
+    return 1
+  fi
+  if (( ALLOY_RUNTIME_ROOT )); then
+    secure_artifact_directory "$directory"
+    return $?
+  fi
+  expected_group="$ALLOY_RUNTIME_GROUP"
+  if [[ -z "$expected_group" || ! "$expected_group" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    return 1
+  fi
+  if ! expected_gid="$(getent group "$expected_group" | cut -d: -f3)" || [[ -z "$expected_gid" ]]; then
+    return 1
+  fi
+  if ! metadata="$(stat -c '%u:%g:%a' -- "$directory" 2>/dev/null)"; then
+    return 1
+  fi
+  IFS=: read -r uid gid mode <<< "$metadata"
+  if [[ "$uid" != '0' || "$gid" != "$expected_gid" || ${#mode} -lt 3 ]]; then
+    return 1
+  fi
+  group_digit="${mode: -2:1}"
+  other_digit="${mode: -1}"
+  if [[ "$group_digit" != [57] || "$other_digit" != '0' ]]; then
+    return 1
+  fi
+  return 0
+}
+
 ensure_artifact_directory() {
   local directory="$1"
   local parent=''
@@ -1836,6 +1885,8 @@ task4_ensure_credential_directory() {
 
 task4_ensure_config_directory() {
   local directory="${ALLOY_CONFIG_FILE%/*}"
+  local directory_group='root'
+  local directory_mode='0755'
 
   if [[ -L "$directory" || ( -e "$directory" && ! -d "$directory" ) ]]; then
     return 1
@@ -1844,13 +1895,17 @@ task4_ensure_config_directory() {
     if ! task4_validate_directory_parent "$directory"; then
       return 1
     fi
-    if ! install -d -m 0755 -- "$directory" >/dev/null 2>&1 || ! chown root:root -- "$directory" >/dev/null 2>&1; then
+    if (( ! ALLOY_RUNTIME_ROOT )); then
+      directory_group="$ALLOY_RUNTIME_GROUP"
+      directory_mode='0750'
+    fi
+    if ! install -d -m "$directory_mode" -- "$directory" >/dev/null 2>&1 || ! chown "root:$directory_group" -- "$directory" >/dev/null 2>&1; then
       return 1
     fi
     TASK4_CONFIG_DIR_CREATED=1
     TASK4_CONFIG_DIR_CHANGED=1
   fi
-  secure_artifact_directory "$directory"
+  secure_alloy_config_directory "$directory"
 }
 
 write_credential_atomic() {
@@ -1885,7 +1940,9 @@ write_credential_atomic() {
     rm -f -- "$temporary" >/dev/null 2>&1 || true
     return 1
   fi
-  if ! printf '%s\n' "$ENROLLED_CREDENTIAL" > "$temporary"; then
+  # Alloy's local.file component reads the credential bytes verbatim. Do not
+  # append a newline: it would become an invalid Authorization header value.
+  if ! printf '%s' "$ENROLLED_CREDENTIAL" > "$temporary"; then
     return 1
   fi
   if ! chown "root:$group" -- "$temporary" >/dev/null 2>&1 || ! chmod "$mode" -- "$temporary" >/dev/null 2>&1; then
