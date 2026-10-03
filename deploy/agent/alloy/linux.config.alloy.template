@@ -14,7 +14,7 @@ prometheus.scrape "host" {
 
 prometheus.remote_write "ingestion" {
   endpoint {
-    url = "https://ingest.cloudops.example.com/api/v1/write"
+    url = "__GATEWAY_URL__"
     authorization {
       type        = "Bearer"
       credentials = local.file.agent_credential.content

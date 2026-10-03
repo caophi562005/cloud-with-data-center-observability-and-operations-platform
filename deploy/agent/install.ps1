@@ -8,7 +8,7 @@ if ($MyInvocation.InvocationName -eq '.') {
 }
 
 $EnrollmentToken = ''
-$ApiBaseUrl = 'https://api.cloudops.example.com'
+$ApiBaseUrl = 'https://api.opsgrid.hacmieu.com'
 $Help = $false
 
 $positionalIndex = 0
@@ -74,8 +74,8 @@ $ErrorActionPreference = 'Stop'
 # Task 5 established the Windows preflight, locking, and safe Alloy discovery
 # contract. Task 6 extends that contract with official installation, enrollment,
 # protected credential/config persistence, rollback, and service health control.
-$script:ApiBaseUrlDefault = 'https://api.cloudops.example.com'
-$script:GatewayUrlDefault = 'https://ingest.cloudops.example.com/api/v1/write'
+$script:ApiBaseUrlDefault = 'https://api.opsgrid.hacmieu.com'
+$script:GatewayUrlDefault = 'https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write'
 $script:CredentialFilePlaceholder = '__CREDENTIAL_FILE__'
 $script:OutputPrefix = '[opsgrid-agent]'
 

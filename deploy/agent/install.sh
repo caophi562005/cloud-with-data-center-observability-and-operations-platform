@@ -6,10 +6,11 @@ umask 077
 PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-# [opsgrid-agent] Shared contract constants. Installation is intentionally out of scope.
-API_BASE_URL_DEFAULT='https://api.cloudops.example.com'
-GATEWAY_URL_DEFAULT='https://ingest.cloudops.example.com/api/v1/write'
+# [opsgrid-agent] Enrollment API and metric ingestion are separate endpoints.
+API_BASE_URL_DEFAULT='https://api.opsgrid.hacmieu.com'
+GATEWAY_URL_DEFAULT='https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write'
 CREDENTIAL_FILE_PLACEHOLDER='__CREDENTIAL_FILE__'
+GATEWAY_URL_PLACEHOLDER='__GATEWAY_URL__'
 OUTPUT_PREFIX='[opsgrid-agent]'
 SCRIPT_DIR=''
 LINUX_TEMPLATE_FILE=''
@@ -22,6 +23,8 @@ PRIVATE_INSTALL_LOCK_FILE='/run/opsgrid-agent/opsgrid-agent-install.lock'
 
 # [opsgrid-agent] Task 2 state. These values are intentionally kept in memory only.
 API_BASE_URL="$API_BASE_URL_DEFAULT"
+GATEWAY_URL="$GATEWAY_URL_DEFAULT"
+RE_ENROLL=0
 ENROLLMENT_TOKEN=''
 SHOW_HELP=0
 DISTRO_ID=''
@@ -144,12 +147,17 @@ fail_unsupported_platform() {
 usage() {
   printf '%s Usage: install.sh [OPTIONS]\n' "$OUTPUT_PREFIX"
   printf '%s   --enrollment-token TOKEN  Enrollment token input (not echoed)\n' "$OUTPUT_PREFIX"
-  printf '%s   --api-base-url URL        API base URL (default: %s)\n' "$OUTPUT_PREFIX" "$API_BASE_URL_DEFAULT"
+  printf '%s   --api-base-url URL        Enrollment API base URL (default: %s)\n' "$OUTPUT_PREFIX" "$API_BASE_URL_DEFAULT"
+  printf '%s   --gateway-url URL         Gateway base or /api/v1/write URL (default: %s)\n' "$OUTPUT_PREFIX" "$GATEWAY_URL_DEFAULT"
+  printf '%s   --re-enroll               Explicitly replace an existing credential using a new token\n' "$OUTPUT_PREFIX"
+  printf '%s Existing agents reuse credentials and reconcile only the Gateway URL.\n' "$OUTPUT_PREFIX"
   printf '%s   --help                    Show this help text\n' "$OUTPUT_PREFIX"
 }
 
 parse_args() {
   API_BASE_URL="$API_BASE_URL_DEFAULT"
+  GATEWAY_URL="$GATEWAY_URL_DEFAULT"
+  RE_ENROLL=0
   ENROLLMENT_TOKEN=''
   SHOW_HELP=0
 
@@ -171,6 +179,17 @@ parse_args() {
         fi
         API_BASE_URL="$2"
         shift 2
+        ;;
+      --gateway-url)
+        if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
+          fail '--gateway-url requires a value'
+        fi
+        GATEWAY_URL="$2"
+        shift 2
+        ;;
+      --re-enroll)
+        RE_ENROLL=1
+        shift
         ;;
       --help)
         SHOW_HELP=1
@@ -278,6 +297,34 @@ validate_api_url() {
         ;;
     esac
   fi
+}
+
+# Only the Remote Write v1 endpoint is supported. A base URL is normalized to
+# that endpoint; rejecting quotes, queries, userinfo and escapes also prevents
+# injection into the Alloy quoted string below. Plain HTTP is loopback-only.
+validate_gateway_url() {
+  local pattern='^(https|http)://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])(:([0-9]{1,5}))?(/api/v1/write)?/?$'
+  local scheme='' host='' port='' authority=''
+  if [[ ! "$GATEWAY_URL" =~ $pattern ]]; then
+    fail 'invalid Gateway URL'
+  fi
+  scheme="${BASH_REMATCH[1]}"
+  host="${BASH_REMATCH[2]}"
+  port="${BASH_REMATCH[5]}"
+  authority="$host"
+  if [[ -n "$port" ]]; then
+    if (( 10#$port < 1 || 10#$port > 65535 )); then
+      fail 'invalid Gateway URL'
+    fi
+    authority+=":$port"
+  fi
+  if [[ "$scheme" == http ]]; then
+    case "$host" in
+      localhost|127.0.0.1|\[::1\]) ;;
+      *) fail 'Gateway URL must use HTTPS' ;;
+    esac
+  fi
+  GATEWAY_URL="$scheme://$authority/api/v1/write"
 }
 
 read_os_release() {
@@ -1994,7 +2041,13 @@ render_config_atomic() {
   if (( placeholder_length == 0 || placeholder_bytes != placeholder_length )); then
     return 1
   fi
+  without_placeholder="${template_content//"$GATEWAY_URL_PLACEHOLDER"/}"
+  placeholder_bytes=$(( ${#template_content} - ${#without_placeholder} ))
+  if (( placeholder_bytes != ${#GATEWAY_URL_PLACEHOLDER} )); then
+    return 1
+  fi
   rendered="${template_content//"$CREDENTIAL_FILE_PLACEHOLDER"/"$AGENT_CREDENTIAL_FILE"}"
+  rendered="${rendered//"$GATEWAY_URL_PLACEHOLDER"/"$GATEWAY_URL"}"
   if [[ "$rendered" == *"$ENROLLED_CREDENTIAL"* || "$rendered" == *'AGT_'* ]]; then
     return 1
   fi
@@ -2235,6 +2288,16 @@ restore_state() {
     return 0
   fi
   TASK4_ROLLBACK_DONE=1
+  # Staging/validation can fail before any persistent mutation. Do not stop a
+  # healthy running service or rewrite unchanged credentials just to discard a
+  # rejected stage (the live process may still be using a valid older config).
+  if (( ! TASK4_SERVICE_MUTATED && ! TASK4_CREDENTIAL_CHANGED && ! TASK4_CONFIG_CHANGED && ! TASK4_CREDENTIAL_DIR_CHANGED && ! TASK4_CONFIG_DIR_CHANGED )); then
+    if ! task4_cleanup_temps; then
+      return 1
+    fi
+    TASK4_TXN_ACTIVE=0
+    return 0
+  fi
   # Never replace a credential/config file while Alloy may still be consuming it.
   # If quiescing fails, fail closed: keep persistent files/directories untouched.
   if ! task4_quiesce_service_for_restore; then
@@ -2284,6 +2347,11 @@ restore_state() {
 
 apply_and_restart() {
   local metadata=''
+  local config_mode="${1:-644}"
+  case "$config_mode" in
+    600|640|644) ;;
+    *) return 1 ;;
+  esac
 
   if [[ -z "$TASK4_CONFIG_STAGE" || ! -f "$TASK4_CONFIG_STAGE" || -L "$TASK4_CONFIG_STAGE" ]]; then
     return 1
@@ -2299,10 +2367,10 @@ apply_and_restart() {
   if [[ -L "$ALLOY_CONFIG_FILE" || ! -f "$ALLOY_CONFIG_FILE" ]]; then
     return 1
   fi
-  if ! chown root:root -- "$ALLOY_CONFIG_FILE" >/dev/null 2>&1 || ! chmod 0644 -- "$ALLOY_CONFIG_FILE" >/dev/null 2>&1; then
+  if ! chown root:root -- "$ALLOY_CONFIG_FILE" >/dev/null 2>&1 || ! chmod "$config_mode" -- "$ALLOY_CONFIG_FILE" >/dev/null 2>&1; then
     return 1
   fi
-  if ! metadata="$(stat -c '%u:%g:%a' -- "$ALLOY_CONFIG_FILE" 2>/dev/null)" || [[ "$metadata" != '0:0:644' ]]; then
+  if ! metadata="$(stat -c '%u:%g:%a' -- "$ALLOY_CONFIG_FILE" 2>/dev/null)" || [[ "$metadata" != "0:0:$config_mode" ]]; then
     return 1
   fi
 
@@ -2602,6 +2670,123 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Existing credentials must be safe and usable by the vendor service. This is
+# local validation only: Gateway authentication still requires a real enrollment.
+validate_existing_agent() {
+  local directory="${AGENT_CREDENTIAL_FILE%/*}"
+  local config_directory="${ALLOY_CONFIG_FILE%/*}"
+  local expected_gid='0' metadata='' content='' size=''
+  local LC_ALL=C
+  if [[ -L "$AGENT_CREDENTIAL_FILE" || ! -f "$AGENT_CREDENTIAL_FILE" || -L "$ALLOY_CONFIG_FILE" || ! -f "$ALLOY_CONFIG_FILE" ]]; then
+    return 1
+  fi
+  # Validate ancestors as root-owned, but use service-aware permissions for
+  # the existing leaf directories (root:alloy 0750/0770 are vendor layouts).
+  if ! secure_artifact_directory "${directory%/*}" || ! secure_artifact_directory "${config_directory%/*}"; then
+    return 1
+  fi
+  if [[ -L "$directory" || ! -d "$directory" ]] || [[ "$(realpath -e -- "$directory")" != "$directory" ]]; then
+    return 1
+  fi
+  if ! secure_alloy_config_directory "${ALLOY_CONFIG_FILE%/*}" && ! secure_artifact_directory "${ALLOY_CONFIG_FILE%/*}"; then
+    return 1
+  fi
+  if (( ! ALLOY_RUNTIME_ROOT )); then
+    expected_gid="$(getent group "$ALLOY_RUNTIME_GROUP" | cut -d: -f3)" || return 1
+    [[ -n "$expected_gid" ]] || return 1
+  fi
+  metadata="$(stat -c '%u:%g:%a' -- "$directory")" || return 1
+  case "$metadata" in
+    "0:$expected_gid:750") ;;
+    '0:0:700') (( ALLOY_RUNTIME_ROOT )) || return 1 ;;
+    *) return 1 ;;
+  esac
+  metadata="$(stat -c '%u:%g:%a' -- "$AGENT_CREDENTIAL_FILE")" || return 1
+  case "$metadata" in
+    "0:$expected_gid:640") ;;
+    '0:0:600') (( ALLOY_RUNTIME_ROOT )) || return 1 ;;
+    *) return 1 ;;
+  esac
+  metadata="$(stat -c '%u:%g:%a' -- "$ALLOY_CONFIG_FILE")" || return 1
+  case "$metadata" in
+    '0:0:644') ;;
+    '0:0:640'|'0:0:600') (( ALLOY_RUNTIME_ROOT )) || return 1 ;;
+    *) return 1 ;;
+  esac
+  size="$(stat -c '%s' -- "$AGENT_CREDENTIAL_FILE")" || return 1
+  (( size >= 5 && size <= 512 )) || return 1
+  # read preserves trailing newlines; byte-count comparison rejects NUL bytes.
+  IFS= read -r -d '' content < "$AGENT_CREDENTIAL_FILE" || true
+  [[ ${#content} -eq size && "$content" =~ ^AGT_[A-Za-z0-9_-]+$ ]]
+}
+
+stage_gateway_update() {
+  local temporary='' stage_status=0
+  temporary="$(mktemp -- "${ALLOY_CONFIG_FILE%/*}/.opsgrid-agent-config.XXXXXX")" || return 1
+  task4_track_temp "$temporary" || return 1
+  chmod 600 -- "$temporary" || return 1
+  # Change only the single endpoint URL in the installer-managed ingestion
+  # component. Preserve all other config lines; reject ambiguous/custom layouts
+  # rather than guessing which endpoint to rewrite. Input is the private snapshot.
+  awk -v url="$GATEWAY_URL" '
+    /^[[:space:]]*prometheus[.]remote_write[[:space:]]+"ingestion"[[:space:]]*[{][[:space:]]*$/ {
+      blocks++; inside=1; depth=0
+    }
+    {
+      if (inside) {
+        if ($0 ~ /^[[:space:]]*endpoint[[:space:]]*[{][[:space:]]*$/) {
+          endpoints++; endpoint_depth=depth+1
+        }
+        if (endpoint_depth && depth == endpoint_depth && $0 ~ /^[[:space:]]*url[[:space:]]*=/) {
+          if ($0 !~ /^[[:space:]]*url[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*(\/\/.*)?$/) exit 1
+          current=$0; sub(/^[^"]*"/, "", current); sub(/".*$/, "", current)
+          if (current != url) changed=1
+          urls++; sub(/"[^"]*"/, "\"" url "\"")
+        }
+        braces=$0
+        gsub(/"[^"]*"/, "", braces); sub(/\/\/.*/, "", braces)
+        opens=gsub(/[{]/, "", braces); closes=gsub(/[}]/, "", braces)
+        depth+=opens-closes
+        if (endpoint_depth && depth < endpoint_depth) endpoint_depth=0
+        if (depth == 0) inside=0
+      }
+      print
+    }
+    END {
+      if (blocks != 1 || endpoints != 1 || urls != 1 || inside) exit 1
+      if (!changed) exit 2
+    }
+  ' "$TASK4_SNAPSHOT_CONFIG_CONTENT" > "$temporary" || stage_status=$?
+  if (( stage_status == 2 )); then
+    # Preserve even final-newline differences when the URL already matches.
+    cp -- "$TASK4_SNAPSHOT_CONFIG_CONTENT" "$temporary" || return 1
+  elif (( stage_status != 0 )); then
+    return 1
+  fi
+  TASK4_CONFIG_STAGE="$temporary"
+}
+
+reconcile_gateway() {
+  if ! get_alloy_runtime_group || ! validate_existing_agent; then
+    fail 'existing agent state is unsafe or incomplete; Gateway was not changed' 40
+  fi
+  if ! snapshot_state || ! stage_gateway_update || ! validate_alloy_config; then
+    fail 'config validation failed' 40
+  fi
+  if cmp -s -- "$TASK4_CONFIG_STAGE" "$ALLOY_CONFIG_FILE" && systemctl is-active --quiet alloy.service; then
+    log 'Gateway URL is unchanged; Alloy is active. Credential and service were not changed.'
+  else
+    if ! apply_and_restart "$TASK4_SNAPSHOT_CONFIG_MODE" || ! wait_for_service; then
+      fail 'service failed' 50
+    fi
+    log 'Gateway configuration applied; Alloy is active. Existing credential was preserved.'
+  fi
+  if ! task4_cleanup_temps; then
+    fail 'service failed' 50
+  fi
+  task4_commit
+}
+
 main() {
   parse_args "$@"
   if ((SHOW_HELP)); then
@@ -2610,11 +2795,22 @@ main() {
   fi
 
   validate_api_url
+  validate_gateway_url
   enforce_root
   detect_platform
   require_commands
   acquire_lock
   get_os_metadata
+
+  # Reruns reconcile the embedded Gateway without consuming another token or
+  # invoking package installation. Re-enrollment is an explicit opt-in only.
+  if (( ! RE_ENROLL )) && [[ -e "$AGENT_CREDENTIAL_FILE" || -L "$AGENT_CREDENTIAL_FILE" ]]; then
+    if ! alloy_is_installed; then
+      fail 'existing agent has no valid Alloy installation; refusing to reinstall' 20
+    fi
+    reconcile_gateway
+    return 0
+  fi
   read_enrollment_token
 
   if ! alloy_is_installed; then

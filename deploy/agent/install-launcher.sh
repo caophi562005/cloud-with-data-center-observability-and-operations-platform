@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+set +x
 umask 077
 
 OUTPUT_PREFIX='[opsgrid-agent]'
 RELEASE_BASE_URL='https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/latest/download'
 TOKEN=''
+INSTALLER_ARGS=()
 TEMP_ROOT=''
 
 log() {
@@ -12,9 +14,13 @@ log() {
 }
 
 usage() {
-  printf '%s Usage: install-launcher.sh --token TOKEN\n' "$OUTPUT_PREFIX"
-  printf '%s   --token TOKEN  Enrollment token input (not echoed)\n' "$OUTPUT_PREFIX"
-  printf '%s   --help         Show this help text\n' "$OUTPUT_PREFIX"
+  printf '%s Usage: install-launcher.sh [OPTIONS]\n' "$OUTPUT_PREFIX"
+  printf '%s   --token TOKEN       First install/re-enrollment token (not echoed)\n' "$OUTPUT_PREFIX"
+  printf '%s   --api-base-url URL  Enrollment API base URL\n' "$OUTPUT_PREFIX"
+  printf '%s   --gateway-url URL   Override the installer default Gateway\n' "$OUTPUT_PREFIX"
+  printf '%s   --re-enroll         Replace existing credential using a new token\n' "$OUTPUT_PREFIX"
+  printf '%s Reruns need no token: installed agents reconcile the Gateway URL.\n' "$OUTPUT_PREFIX"
+  printf '%s   --help              Show this help text\n' "$OUTPUT_PREFIX"
 }
 
 fail_usage() {
@@ -38,6 +44,17 @@ parse_args() {
         TOKEN="${argument#--token=}"
         shift
         ;;
+      --api-base-url|--gateway-url)
+        if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
+          fail_usage
+        fi
+        INSTALLER_ARGS+=("$1" "$2")
+        shift 2
+        ;;
+      --re-enroll)
+        INSTALLER_ARGS+=("$1")
+        shift
+        ;;
       --help|-h)
         usage
         exit 0
@@ -48,9 +65,8 @@ parse_args() {
     esac
   done
 
-  if [[ -z "$TOKEN" ]]; then
-    log 'enrollment token is required; pass --token TOKEN' >&2
-    exit 10
+  if [[ -n "$TOKEN" ]]; then
+    INSTALLER_ARGS+=(--enrollment-token "$TOKEN")
   fi
 }
 
@@ -119,7 +135,7 @@ validate_assets() {
     log 'downloaded Linux installer is invalid' >&2
     return 1
   fi
-  if ! grep -Fq -- '__CREDENTIAL_FILE__' "$template"; then
+  if ! grep -Fq -- '__CREDENTIAL_FILE__' "$template" || ! grep -Fq -- '__GATEWAY_URL__' "$template"; then
     log 'downloaded Linux Alloy template is invalid' >&2
     return 1
   fi
@@ -152,8 +168,9 @@ main() {
   fi
 
   local installer_exit=0
-  bash "$TEMP_ROOT/install.sh" --enrollment-token "$TOKEN" || installer_exit=$?
+  bash "$TEMP_ROOT/install.sh" "${INSTALLER_ARGS[@]}" || installer_exit=$?
   TOKEN=''
+  INSTALLER_ARGS=()
   if ((installer_exit != 0)); then
     return "$installer_exit"
   fi
