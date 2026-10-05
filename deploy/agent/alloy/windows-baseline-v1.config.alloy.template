@@ -1,0 +1,59 @@
+// Compact Windows baseline v1: dynamic topology, not a fixed series-count limit.
+// Keep exact native inputs and all observed diagnostic dimensions. No collector pruning.
+local.file "agent_credential" {
+  filename  = "__CREDENTIAL_FILE__"
+  is_secret = true
+}
+
+prometheus.exporter.windows "host" {
+  enabled_collectors = ["cpu", "logical_disk", "memory", "net", "os", "system"]
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.windows.host.targets
+  forward_to      = [prometheus.relabel.windows_baseline_v1.receiver]
+  scrape_interval = "15s"
+}
+
+prometheus.relabel "windows_baseline_v1" {
+  forward_to = [prometheus.remote_write.ingestion.receiver]
+
+  // Anchored RE2 exact-family alternatives: only CPU needs idle + native numeric core.
+  // Other approved families ignore mode/core entirely, including missing labels.
+  rule {
+    source_labels = ["__name__", "mode", "core"]
+    regex = "^(windows_cpu_time_total;idle;[0-9]+,[0-9]+|(windows_memory_available_bytes|windows_memory_physical_total_bytes|windows_logical_disk_free_bytes|windows_logical_disk_size_bytes|windows_net_bytes_received_total|windows_net_bytes_sent_total|windows_system_boot_time_timestamp|up|windows_exporter_build_info|windows_exporter_collector_success|windows_exporter_collector_timeout|windows_exporter_collector_duration_seconds|windows_exporter_scrape_duration_seconds|scrape_duration_seconds|scrape_samples_scraped|scrape_samples_post_metric_relabeling|scrape_series_added);.*)$"
+    action = "keep"
+  }
+
+  // Only disk free/size need a drive letter. Diagnostics and other inputs bypass it.
+  rule {
+    source_labels = ["__name__", "volume"]
+    regex = "^(windows_logical_disk_(free|size)_bytes;[A-Za-z]:|(windows_cpu_time_total|windows_memory_available_bytes|windows_memory_physical_total_bytes|windows_net_bytes_received_total|windows_net_bytes_sent_total|windows_system_boot_time_timestamp|up|windows_exporter_build_info|windows_exporter_collector_success|windows_exporter_collector_timeout|windows_exporter_collector_duration_seconds|windows_exporter_scrape_duration_seconds|scrape_duration_seconds|scrape_samples_scraped|scrape_samples_post_metric_relabeling|scrape_series_added);.*)$"
+    action = "keep"
+  }
+
+  // Only received/sent byte counters need a nonempty NIC; no adapter enumeration.
+  rule {
+    source_labels = ["__name__", "nic"]
+    regex = "^(windows_net_bytes_(received|sent)_total;.+|(windows_cpu_time_total|windows_memory_available_bytes|windows_memory_physical_total_bytes|windows_logical_disk_free_bytes|windows_logical_disk_size_bytes|windows_system_boot_time_timestamp|up|windows_exporter_build_info|windows_exporter_collector_success|windows_exporter_collector_timeout|windows_exporter_collector_duration_seconds|windows_exporter_scrape_duration_seconds|scrape_duration_seconds|scrape_samples_scraped|scrape_samples_post_metric_relabeling|scrape_series_added);.*)$"
+    action = "keep"
+  }
+
+  // Exact exporter loopback spelling only, scoped to network byte families.
+  rule {
+    source_labels = ["__name__", "nic"]
+    regex = "^windows_net_bytes_(received|sent)_total;Software Loopback Interface( [0-9]+)?$"
+    action = "drop"
+  }
+}
+
+prometheus.remote_write "ingestion" {
+  endpoint {
+    url = "https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write"
+    authorization {
+      type        = "Bearer"
+      credentials = local.file.agent_credential.content
+    }
+  }
+}

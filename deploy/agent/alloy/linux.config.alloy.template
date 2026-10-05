@@ -3,13 +3,47 @@ local.file "agent_credential" {
   is_secret = true
 }
 
+// opsgrid.metrics_profile = linux-baseline-v1
 prometheus.exporter.unix "host" {
+  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "stat", "diskstats", "vmstat", "pressure", "filefd", "timex"]
 }
 
 prometheus.scrape "host" {
   targets         = prometheus.exporter.unix.host.targets
-  forward_to      = [prometheus.remote_write.ingestion.receiver]
-  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.linux_baseline.receiver]
+  scrape_interval = "30s"
+}
+
+prometheus.relabel "linux_baseline" {
+  forward_to = [prometheus.remote_write.ingestion.receiver]
+
+  // Preserve metric names and every label; only filter series. Collector
+  // diagnostics are retained only for the explicitly enabled collectors.
+  rule {
+    source_labels = ["__name__", "collector"]
+    regex = "(node_(cpu_seconds_total|memory_(MemAvailable|MemTotal|SwapTotal|SwapFree|Cached|Buffers|Dirty)_bytes|filesystem_(avail_bytes|size_bytes|files|files_free|readonly|device_error)|network_(receive|transmit)_(bytes|errs|drop|packets)_total|load(1|5|15)|boot_time_seconds|vmstat_(oom_kill|pgmajfault|pswpin|pswpout)|disk_(reads_completed_total|writes_completed_total|read_bytes_total|written_bytes_total|read_time_seconds_total|write_time_seconds_total|io_now|io_time_seconds_total|io_time_weighted_seconds_total)|procs_(running|blocked)|pressure_(cpu_waiting|memory_(waiting|stalled)|io_(waiting|stalled))_seconds_total|filefd_(allocated|maximum)|timex_(sync_status|offset_seconds))|up|scrape_(duration_seconds|samples_scraped|samples_post_metric_relabeling|series_added));.*|node_scrape_collector_(success|duration_seconds);(cpu|meminfo|filesystem|netdev|loadavg|stat|diskstats|vmstat|pressure|filefd|timex)"
+    action = "keep"
+  }
+
+  // Scope exclusions to filesystem metrics, matching the API boundaries.
+  rule {
+    source_labels = ["__name__", "fstype"]
+    regex = "node_filesystem_.*;(tmpfs|devtmpfs|proc|sysfs|overlay|squashfs|nsfs|tracefs|cgroup2?)"
+    action = "drop"
+  }
+
+  rule {
+    source_labels = ["__name__", "mountpoint"]
+    regex = "node_filesystem_.*;(/run($|/.*)|/var/lib/(docker|containers)($|/.*))"
+    action = "drop"
+  }
+
+  // Do not drop similarly labelled disk/CPU/health series or lo-like devices.
+  rule {
+    source_labels = ["__name__", "device"]
+    regex = "node_network_.*;lo"
+    action = "drop"
+  }
 }
 
 prometheus.remote_write "ingestion" {

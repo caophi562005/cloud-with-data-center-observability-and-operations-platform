@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "profile": "windows-baseline-v1",
+  "scope": "Approved compact native Windows inputs and observed diagnostics; dynamic topology, not comprehensive Windows operational coverage",
+  "sourceProposal": {
+    "path": ".superpowers/sdd/2026-10-05-windows-agent-e2e-and-baseline/task-9-assets/attempt-2/measured-allowlist-proposal-v2.json",
+    "sha256": "bcd92c713db8e1120b1df98e55f3a2701415cbc575177b6a2c006493c25eac60",
+    "historicalApprovalFlagsUnchanged": true
+  },
+  "evidence": {
+    "nativeSha256": "dad436be9c6ac570c7d61f4b71ede05167686401ff027e23d5da7bff12cecc08",
+    "backendSha256": "fb2dfe5d97670ecbfc6f3b9e9e2f7c990f0c26d549b22a8c9c0928d9f624b4d7",
+    "beforeConfigSha256": "296fc872dbec65ca70fd415a07690c44a58c5b874e050238f3304b12f54abd4d",
+    "observations": 22,
+    "overlapSeconds": 624.4489998817444,
+    "observedSeriesPerSnapshot": 190,
+    "projectedRetainedSeriesPerSnapshot": 34,
+    "projectedRemovedSeriesPerSnapshot": 156,
+    "projectedNativeConstituents": 9,
+    "projectedDiagnosticSeries": 25,
+    "measuredAfter": false,
+    "fixedCardinalityContract": false
+  },
+  "collectors": ["cpu", "logical_disk", "memory", "net", "os", "system"],
+  "scrapeSeconds": 15,
+  "metricFamilies": [
+    "windows_cpu_time_total",
+    "windows_memory_available_bytes",
+    "windows_memory_physical_total_bytes",
+    "windows_logical_disk_free_bytes",
+    "windows_logical_disk_size_bytes",
+    "windows_net_bytes_received_total",
+    "windows_net_bytes_sent_total",
+    "windows_system_boot_time_timestamp"
+  ],
+  "diagnosticFamilies": [
+    "up",
+    "windows_exporter_build_info",
+    "windows_exporter_collector_success",
+    "windows_exporter_collector_timeout",
+    "windows_exporter_collector_duration_seconds",
+    "windows_exporter_scrape_duration_seconds",
+    "scrape_duration_seconds",
+    "scrape_samples_scraped",
+    "scrape_samples_post_metric_relabeling",
+    "scrape_series_added"
+  ],
+  "eligibility": {
+    "cpu": {"modeEquals": "idle", "coreIncludeRe2": "^[0-9]+,[0-9]+$"},
+    "disk": {"volumeIncludeRe2": "^[A-Za-z]:$"},
+    "network": {"nicIncludeRe2": ".+", "nicExcludeRe2": "^Software Loopback Interface( [0-9]+)?$"},
+    "scalarAndDiagnostics": "Keep every series and all labels; no device or collector filtering",
+    "unmatched": "Drop"
+  },
+  "requiredInputs": {
+    "cpuPercentAndHistory": ["windows_cpu_time_total"],
+    "memoryPercentAndHistory": ["windows_memory_available_bytes", "windows_memory_physical_total_bytes"],
+    "diskPercentAndHistory": ["windows_logical_disk_free_bytes", "windows_logical_disk_size_bytes"],
+    "networkRatesAndHistory": ["windows_net_bytes_received_total", "windows_net_bytes_sent_total"],
+    "uptimeRawTimestamp": ["windows_system_boot_time_timestamp"],
+    "heartbeatAndLastSeen7d": ["up"],
+    "load": "unsupported/null/empty history"
+  },
+  "invariants": ["unchanged original Windows and Linux profiles", "no collector pruning", "same Gateway and secret credential reference", "one writer", "filter only before writer", "no renaming, labeldrop or scratch labels", "preserve identity/core/mode/volume/nic/collector and arbitrary labels"],
+  "caveats": [
+    "34 is a projection on the observed two-logical-processor host, not a promised after count or topology limit.",
+    "Same six collectors: exporter CPU/resource savings are not implied by forwarding reduction.",
+    "Actual post-profile samples, forwarded bytes, resources and queue delivery require parent-only matched measurement.",
+    "Forwarded-byte counters are not billed egress; disk provider refresh remains 10–15 minutes.",
+    "RE2 relabel rules are fully anchored; Python fullmatch is a bounded simulator, not a real Alloy validator."
+  ]
+}

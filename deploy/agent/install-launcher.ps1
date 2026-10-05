@@ -12,45 +12,120 @@ function Write-LauncherLog([string]$Message) {
 }
 
 function Write-LauncherUsage {
-    Write-LauncherLog 'Usage: install-launcher.ps1 -Token TOKEN'
+    Write-LauncherLog 'Usage: install-launcher.ps1 -Token TOKEN [-ApiBaseUrl URL]'
     Write-LauncherLog '  -Token TOKEN  Enrollment token input (not echoed)'
+    Write-LauncherLog '  -ApiBaseUrl URL  API origin (default: https://api.opsgrid.hacmieu.com)'
     Write-LauncherLog '  -Help         Show this help text'
 }
 
 function Get-LauncherArguments([string[]]$Arguments) {
-    $token = $null
-    $showHelp = $false
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = [string]$Arguments[$index]
-        if ([string]::Equals($argument, '-Help', [System.StringComparison]::OrdinalIgnoreCase) -or
-            [string]::Equals($argument, '-h', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $showHelp = $true
-            continue
+    $token = $null; $showHelp = $false; $baseUrl = 'https://api.opsgrid.hacmieu.com'
+    $seen = @{}
+    try {
+        for ($index = 0; $index -lt $Arguments.Count; $index++) {
+            $argument = [string]$Arguments[$index]
+            if ($argument -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('invalid launcher arguments') }
+            if ($argument -match '^(?i)-(Help|h)$') {
+                if ($seen.ContainsKey('Help')) { throw [ArgumentException]::new('duplicate launcher argument') }
+                $seen.Help = $true; $showHelp = $true; continue
+            }
+            if ($argument -notmatch '^(?i)-(Token|ApiBaseUrl)(?:=(.*))?$') { throw [ArgumentException]::new('invalid launcher arguments') }
+            $name = $matches[1]; $hasEquals = $argument.Contains('='); $value = $matches[2]
+            if ($seen.ContainsKey($name)) { throw [ArgumentException]::new('duplicate launcher argument') }
+            if (-not $hasEquals) {
+                if ($index + 1 -ge $Arguments.Count -or [string]$Arguments[$index + 1] -match '^-') { throw [ArgumentException]::new('missing launcher argument') }
+                $value = [string]$Arguments[++$index]
+            }
+            if ([string]::IsNullOrWhiteSpace($value) -or $value -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('invalid launcher argument') }
+            $seen[$name] = $true
+            if ($name -ieq 'Token') { $token = $value } else { $baseUrl = $value }
         }
-        if ([string]::Equals($argument, '-Token', [System.StringComparison]::OrdinalIgnoreCase)) {
-            if (($index + 1) -ge $Arguments.Count) { throw [System.ArgumentException]::new('invalid launcher arguments') }
-            $index++
-            $token = [string]$Arguments[$index]
-            continue
-        }
-        if ($argument.StartsWith('-Token=', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $token = $argument.Substring(7)
-            continue
-        }
-        throw [System.ArgumentException]::new('invalid launcher arguments')
+        $null = Test-LauncherApiBaseUrl $baseUrl
+        if ($showHelp) { return [pscustomobject]@{ Help=$true; Token=$null; ApiBaseUrl=$baseUrl } }
+        if (-not $seen.ContainsKey('Token')) { $token = [Environment]::GetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', 'Process') }
+        if ([string]::IsNullOrWhiteSpace($token) -or $token -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('enrollment token is required') }
+        return [pscustomobject]@{ Help=$false; Token=$token; ApiBaseUrl=$baseUrl }
     }
-    if ($showHelp) {
-        return [pscustomobject]@{ Help = $true; Token = $null }
+    finally { [Environment]::SetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', $null, 'Process') }
+}
+
+function Test-LauncherApiBaseUrl([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw [ArgumentException]::new('invalid API base URL')
     }
-    if ([string]::IsNullOrWhiteSpace($token)) {
-        $environmentToken = [Environment]::GetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', 'Process')
-        if (-not [string]::IsNullOrWhiteSpace($environmentToken)) {
-            $token = [string]$environmentToken
-            [Environment]::SetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', $null, 'Process')
+
+    if ($Value -ne $Value.Trim() -or $Value -match '[\x00-\x1F\x7F\\]' -or $Value -notmatch '^(?i)https?://[^/?#]+$') {
+        throw [ArgumentException]::new('invalid API base URL')
+    }
+
+    # Reject an explicit empty port before Uri normalizes `host:/` to the
+    # default port. Cover both DNS/IPv4 and bracketed IPv6 authorities.
+    if ($Value -match '^[^:/?#]+://(?:[^/?#]*@)?(?:\[[^\]]+\]|[^/?#:\s]+):(?=[/?#]|$)') {
+        throw [ArgumentException]::new('invalid API base URL port')
+    }
+
+    $uri = $null
+    $isAbsolute = $false
+    try {
+        $isAbsolute = [System.Uri]::TryCreate(
+            $Value,
+            [System.UriKind]::Absolute,
+            [ref]$uri
+        )
+    }
+    catch {
+        throw [ArgumentException]::new('invalid API base URL')
+    }
+
+    if (-not $isAbsolute -or $null -eq $uri -or [string]::IsNullOrWhiteSpace($uri.Host)) {
+        throw [ArgumentException]::new('invalid API base URL')
+    }
+
+    # Do not permit credentials, including the empty-user-info form https://@host.
+    if (-not [string]::IsNullOrEmpty($uri.UserInfo) -or $Value -match '^[^:/?#]+://[^/?#]*@') {
+        throw [ArgumentException]::new('API base URL credentials are not allowed')
+    }
+
+    if ($Value.IndexOf('#') -ge 0 -or -not [string]::IsNullOrEmpty($uri.Fragment)) {
+        throw [ArgumentException]::new('API base URL fragments are not allowed')
+    }
+
+    # API base URLs are origins only. Uri.AbsolutePath is '/' when no path was
+    # supplied, so retain that representation but reject every other path. A
+    # query delimiter is rejected even when its value is empty.
+    if (($uri.AbsolutePath -ne '/') -or
+        $Value -match '/$' -or
+        $Value.IndexOf('?') -ge 0 -or
+        -not [string]::IsNullOrEmpty($uri.Query)) {
+        throw [ArgumentException]::new('API base URL must be an origin without a path or query')
+    }
+
+    # Uri.Port is -1 when the scheme's default port is used. Explicit ports must
+    # be in the TCP range and zero is never valid.
+    if ($uri.Port -ne -1 -and ($uri.Port -lt 1 -or $uri.Port -gt 65535)) {
+        throw [ArgumentException]::new('invalid API base URL port')
+    }
+
+    $scheme = $uri.Scheme.ToLowerInvariant()
+    if ($scheme -eq 'https') {
+        return $uri
+    }
+
+    $hostName = $uri.Host.Trim('[', ']').ToLowerInvariant()
+    if ($hostName -ne 'localhost') {
+        try {
+            $hostName = [System.Net.IPAddress]::Parse($hostName).ToString().ToLowerInvariant()
+        }
+        catch {
+            # Non-IP host names are compared literally below.
         }
     }
-    if ([string]::IsNullOrWhiteSpace($token)) { throw [System.ArgumentException]::new('enrollment token is required') }
-    return [pscustomobject]@{ Help = $false; Token = $token }
+    $isLoopbackHttp = $scheme -eq 'http' -and @('localhost', '127.0.0.1', '::1') -contains $hostName
+    if (-not $isLoopbackHttp) {
+        throw [ArgumentException]::new('API base URL must use HTTPS; HTTP is limited to loopback')
+    }
+
+    return $uri
 }
 
 function New-LauncherTempRoot {
@@ -80,8 +155,30 @@ function Test-LauncherAssets {
     $template = Join-Path $script:TempRoot 'alloy\windows.config.alloy.template'
     $installerText = [IO.File]::ReadAllText($installer)
     $templateText = [IO.File]::ReadAllText($template)
-    if (-not $installerText.Contains('EnrollmentToken')) { throw 'downloaded Windows installer is invalid' }
-    if (-not $templateText.Contains('__CREDENTIAL_FILE__')) { throw 'downloaded Windows Alloy template is invalid' }
+    # Structural truncation checks only: these do not attest a paired release.
+    # Live use still requires independent review of the exact installer/template hashes.
+    $tokens = $null; $parseErrors = $null
+    $installerAst = [Management.Automation.Language.Parser]::ParseInput($installerText, [ref]$tokens, [ref]$parseErrors)
+    $functions = @($installerAst.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object { $_.Name })
+    if ($parseErrors.Count -gt 0 -or -not $installerText.Contains('EnrollmentToken') -or
+        @('Get-OpsGridArguments','Invoke-Enrollment','Invoke-OpsGrid','Test-EnrollmentResponse' | Where-Object { $functions -notcontains $_ }).Count -gt 0 -or
+        $null -eq $installerAst.EndBlock -or $installerAst.EndBlock.Statements.Count -eq 0) { throw 'downloaded Windows installer is invalid' }
+    $tail = $installerAst.EndBlock.Statements[-1]
+    if ($tail -isnot [Management.Automation.Language.IfStatementAst] -or
+        $null -eq $tail.Find({ param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Invoke-OpsGrid' }, $true) -or
+        $null -eq $tail.Find({ param($node) $node -is [Management.Automation.Language.ExitStatementAst] }, $true)) { throw 'downloaded Windows installer is incomplete' }
+    if (-not $templateText.Contains('__CREDENTIAL_FILE__') -or
+        $templateText -notmatch 'prometheus\.exporter\.windows\s+"host"' -or
+        $templateText -notmatch 'prometheus\.scrape\s+"host"' -or
+        $templateText -notmatch 'prometheus\.remote_write\s+"ingestion"' -or
+        $templateText -notmatch 'credentials\s*=\s*local\.file\.agent_credential\.content') { throw 'downloaded Windows Alloy template is invalid' }
+    $structure = [regex]::Replace($templateText, '(?m)//[^\r\n]*|"(?:\\.|[^"\\])*"', '')
+    $depth = 0
+    foreach ($character in $structure.ToCharArray()) {
+        if ($character -eq '{') { $depth++ }
+        if ($character -eq '}') { $depth--; if ($depth -lt 0) { throw 'downloaded Windows Alloy template is incomplete' } }
+    }
+    if ($depth -ne 0 -or $templateText.TrimEnd() -notmatch '}$') { throw 'downloaded Windows Alloy template is incomplete' }
 }
 
 function Remove-LauncherTempRoot {
@@ -101,41 +198,44 @@ function Remove-LauncherTempRoot {
     }
 }
 
-try {
-    $parsed = Get-LauncherArguments -Arguments $args
-    if ($parsed.Help) {
-        Write-LauncherUsage
-        exit 0
+function Invoke-Launcher([string[]]$Arguments) {
+    $parsed = $null; $childArguments = $null
+    $script:TempRoot = $null; $script:ExitCode = 0
+    $argumentsValidated = $false
+    try {
+        $parsed = Get-LauncherArguments -Arguments $Arguments
+        $argumentsValidated = $true
+        if ($parsed.Help) { Write-LauncherUsage; return }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $script:TempRoot = New-LauncherTempRoot
+        $alloyDirectory = Join-Path $script:TempRoot 'alloy'
+        New-Item -ItemType Directory -Path $alloyDirectory -Force | Out-Null
+        Download-LauncherAsset 'install.ps1' (Join-Path $script:TempRoot 'install.ps1')
+        Download-LauncherAsset 'windows.config.alloy.template' (Join-Path $alloyDirectory 'windows.config.alloy.template')
+        Test-LauncherAssets
+        $installer = Join-Path $script:TempRoot 'install.ps1'
+        # Literal native argv; never interpolate a command or evaluate token text.
+        $childArguments = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$installer,
+            '-EnrollmentToken',([string]$parsed.Token),'-ApiBaseUrl',([string]$parsed.ApiBaseUrl))
+        & powershell.exe @childArguments
+        $script:ExitCode = $LASTEXITCODE
     }
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $script:TempRoot = New-LauncherTempRoot
-    $alloyDirectory = Join-Path $script:TempRoot 'alloy'
-    New-Item -ItemType Directory -Path $alloyDirectory -Force | Out-Null
-
-    Download-LauncherAsset 'install.ps1' (Join-Path $script:TempRoot 'install.ps1')
-    Download-LauncherAsset 'windows.config.alloy.template' (Join-Path $alloyDirectory 'windows.config.alloy.template')
-    Test-LauncherAssets
-
-    $installer = Join-Path $script:TempRoot 'install.ps1'
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installer -EnrollmentToken ([string]$parsed.Token)
-    $script:ExitCode = $LASTEXITCODE
+    catch {
+        if (-not $argumentsValidated -and $_.Exception -is [ArgumentException]) {
+            Write-LauncherLog 'invalid launcher arguments or missing enrollment token'
+            $script:ExitCode = 10
+        }
+        else { Write-LauncherLog 'launcher failed'; $script:ExitCode = 20 }
+    }
+    finally {
+        if (-not (Remove-LauncherTempRoot)) {
+            Write-LauncherLog 'launcher temporary cleanup failed'
+            if ($script:ExitCode -eq 0) { $script:ExitCode = 50 }
+        }
+        [Environment]::SetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', $null, 'Process')
+        $parsed = $null; $childArguments = $null; $Arguments = $null
+    }
 }
-catch {
-    if ($_.Exception -is [System.ArgumentException]) {
-        Write-LauncherLog 'invalid launcher arguments or missing enrollment token'
-        $script:ExitCode = 10
-    }
-    else {
-        Write-LauncherLog 'launcher failed'
-        $script:ExitCode = 20
-    }
-}
-finally {
-    if (-not (Remove-LauncherTempRoot)) {
-        Write-LauncherLog 'launcher temporary cleanup failed'
-        if ($script:ExitCode -eq 0) { $script:ExitCode = 50 }
-    }
-}
 
+Invoke-Launcher -Arguments @($args)
 exit $script:ExitCode
