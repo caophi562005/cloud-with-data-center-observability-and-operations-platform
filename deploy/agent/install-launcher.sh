@@ -19,6 +19,7 @@ usage() {
   printf '%s   --api-base-url URL  Enrollment API base URL\n' "$OUTPUT_PREFIX"
   printf '%s   --gateway-url URL   Override the installer default Gateway\n' "$OUTPUT_PREFIX"
   printf '%s   --re-enroll         Replace existing credential using a new token\n' "$OUTPUT_PREFIX"
+  printf '%s   --apply-profile PROFILE  Upgrade managed Linux metrics without re-enrollment\n' "$OUTPUT_PREFIX"
   printf '%s Reruns need no token: installed agents reconcile the Gateway URL.\n' "$OUTPUT_PREFIX"
   printf '%s   --help              Show this help text\n' "$OUTPUT_PREFIX"
 }
@@ -44,7 +45,7 @@ parse_args() {
         TOKEN="${argument#--token=}"
         shift
         ;;
-      --api-base-url|--gateway-url)
+      --api-base-url|--gateway-url|--apply-profile)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
           fail_usage
         fi
