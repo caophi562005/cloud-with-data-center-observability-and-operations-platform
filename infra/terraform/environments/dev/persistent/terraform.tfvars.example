@@ -1,0 +1,21 @@
+aws_region   = "ap-southeast-1"
+project_name = "opsgrid"
+environment  = "dev"
+
+callback_urls = ["http://localhost:3000/auth/callback"]
+logout_urls   = ["http://localhost:5173/login"]
+
+create_user_pool_domain         = false
+cognito_domain_prefix           = null
+enable_google_identity_provider = false
+# Supply Google inputs only in private ignored terraform.tfvars when enabled.
+
+ingest_repository_name = "opsgrid-ingest"
+api_repository_name    = "opsgrid-api"
+
+# GitHub connection is external, must already be AVAILABLE/repository-authorized.
+# Opt in explicitly and supply a valid account 491333778094 Singapore ARN.
+enable_codebuild_web   = false
+github_connection_arn  = null
+codebuild_build_timeout_minutes  = 20
+codebuild_queued_timeout_minutes = 30

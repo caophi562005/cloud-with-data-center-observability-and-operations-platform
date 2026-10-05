@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars: Terraform auto-loads terraform.tfvars, not this example.
+# These are the current approved nonsecret environment inputs.
+region                = "ap-southeast-1"
+allowed_account_id    = "491333778094"
+api_name              = "opsgrid-dev-test-api"
+vpc_id                = "vpc-0ff8d16e80f7ca153"
+subnet_ids            = ["subnet-00b483ac36dfe8d7f", "subnet-02358cbff24af7145"]
+allowed_ingress_cidrs = ["0.0.0.0/0"]
+image_digest_uri      = "public.ecr.aws/h5u5b6t3/opsgrid-api@sha256:4a2c4bc8177b1016591cdbb0b7926bc0a4e50be268de1b63b801387cc63e7dc7"
+certificate_arn       = "arn:aws:acm:ap-southeast-1:491333778094:certificate/713188d7-a266-4804-962a-34e46f81bc42"
+hosted_zone_id        = "Z04903171FP3IXRU1BXRK"
+api_dns_name          = "api.opsgrid.hacmieu.com"
+parameter_path        = "/opsgrid/dev/test/api"
+database_port         = 5432
+redis_port            = 11352
+cpu                   = 256
+memory                = 512
+secret_value_version  = 1
+
+# Private runtime values belong in runtime.auto.tfvars.json (git-ignored).
+# Set runtime_secret_names there to the keys in runtime_secret_values.
+# Increment secret_value_version whenever a write-only runtime value changes.

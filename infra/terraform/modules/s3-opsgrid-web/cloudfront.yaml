@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Actual FREE subscription for the Registry-managed OpsGrid CloudFront distribution.
+Parameters:
+  DistributionArn:
+    Type: String
+    AllowedPattern: '^arn:aws:cloudfront::491333778094:distribution/[A-Z0-9]+$'
+  WebAclArn:
+    Type: String
+    AllowedPattern: '^arn:aws:wafv2:us-east-1:491333778094:global/webacl/opsgrid-dev-web-cloudfront/[^/]+$'
+Resources:
+  FreeSubscription:
+    Type: AWS::PricingPlanManager::Subscription
+    Properties:
+      PlanFamily: CloudFront
+      PlanTier: FREE
+      UsageLevel: DEFAULT
+      ResourceArns:
+        - {Ref: DistributionArn}
+        - {Ref: WebAclArn}
+Outputs:
+  SubscriptionArn:
+    Value: {Ref: FreeSubscription}
+  FreePlanStatus:
+    Value: {Fn::GetAtt: [FreeSubscription, Status]}
+  CurrentPlanTier:
+    Value: {Fn::GetAtt: [FreeSubscription, CurrentPlanTier]}

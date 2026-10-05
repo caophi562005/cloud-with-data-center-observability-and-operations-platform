@@ -108,7 +108,7 @@ resource "aws_cognito_user_pool_domain" "this" {
 
   lifecycle {
     precondition {
-      condition     = length(trimspace(coalesce(var.cognito_domain_prefix, ""))) > 0
+      condition     = var.cognito_domain_prefix == null ? false : length(trimspace(var.cognito_domain_prefix)) > 0
       error_message = "cognito_domain_prefix must be non-empty when create_user_pool_domain is true."
     }
   }
@@ -146,11 +146,11 @@ resource "aws_cognito_identity_provider" "google" {
       error_message = "enable_google_identity_provider requires create_user_pool_domain to be true."
     }
     precondition {
-      condition     = length(trimspace(coalesce(var.google_client_id, ""))) > 0
+      condition     = var.google_client_id == null ? false : length(trimspace(var.google_client_id)) > 0
       error_message = "google_client_id must be non-empty when Google is enabled."
     }
     precondition {
-      condition     = length(trimspace(coalesce(var.google_client_secret, ""))) > 0
+      condition     = var.google_client_secret == null ? false : length(trimspace(var.google_client_secret)) > 0
       error_message = "google_client_secret must be non-empty when Google is enabled."
     }
   }
