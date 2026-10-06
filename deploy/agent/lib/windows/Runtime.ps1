@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 # contract. Task 6 extends that contract with official installation, enrollment,
 # protected credential/config persistence, rollback, and service health control.
 $script:ApiBaseUrlDefault = 'https://api.opsgrid.hacmieu.com'
-$script:GatewayUrlDefault = 'https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write'
+$script:GatewayUrlDefault = 'https://ingest.opsgrid.hacmieu.com/api/v1/write'
 $script:CredentialFilePlaceholder = '__CREDENTIAL_FILE__'
 $script:OutputPrefix = '[opsgrid-agent]'
 
