@@ -1,10 +1,10 @@
 # Agent installation, standalone releases and Gateway reconciliation
 
-The Linux installer embeds the current metric ingestion endpoint in
-`GATEWAY_URL_DEFAULT`:
+The Linux and Windows installers use the current HTTPS metric ingestion endpoint
+in their runtime defaults and Windows Alloy templates:
 
 ```text
-https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write
+https://ingest.opsgrid.hacmieu.com/api/v1/write
 ```
 
 This is **not** the enrollment API. `--api-base-url` still points at the separate
@@ -86,9 +86,12 @@ Gateway; it does not upgrade an existing profile.
 
 ## Future Gateway changes
 
-Change `GATEWAY_URL_DEFAULT` in the Linux runtime module, rebuild and verify the
-standalone release, then publish the updated release assets together after review. Download/run the updated script on each VM. Existing VMs
-retain the old URL until the updated script runs.
+Update the Linux `GATEWAY_URL_DEFAULT`, Windows `GatewayUrlDefault`, and both
+Windows Alloy templates together. Rebuild and verify the synchronized standalone
+release, then publish the updated assets together after review. Existing VMs retain
+their configured URL until an explicit update is applied; publication alone does
+not change a running agent. A normal Linux installer rerun reconciles the Gateway
+as described above.
 
 An optional per-invocation override works without a script release:
 

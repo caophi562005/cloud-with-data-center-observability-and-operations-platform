@@ -11,7 +11,7 @@ ASSET_ROOT="${OPSGRID_TEST_RELEASE_DIR:-${HERE%/tests}}"
 INSTALLER="$ASSET_ROOT/install.sh"
 LAUNCHER="$ASSET_ROOT/install-launcher.sh"
 TEMPLATE="$ASSET_ROOT/alloy/linux.config.alloy.template"
-DEFAULT_URL='https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write'
+DEFAULT_URL='https://ingest.opsgrid.hacmieu.com/api/v1/write'
 OLD_URL='https://old-gateway.example.test/api/v1/write'
 NEW_URL='https://new-gateway.example.test/api/v1/write'
 if [[ ${EUID:-1} != 0 || ! -f /.dockerenv ]]; then
@@ -178,7 +178,7 @@ run() {
 urls() {
   parse_args
   validate_gateway_url
-  eq "$GATEWAY_URL" "$DEFAULT_URL" 'embedded Azure Gateway default'
+  eq "$GATEWAY_URL" "$DEFAULT_URL" 'embedded HTTPS ingest Gateway default'
   eq "$RE_ENROLL" 0 'rerun must be the default'
   eq "$ENROLLMENT_TOKEN" '' 'token must be optional at argument parsing'
   local input want

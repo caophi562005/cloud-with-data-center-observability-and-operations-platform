@@ -63,7 +63,7 @@ DIAGNOSTICS = [
     "windows_exporter_scrape_duration_seconds", "scrape_duration_seconds",
     "scrape_samples_scraped", "scrape_samples_post_metric_relabeling", "scrape_series_added",
 ]
-ORIGINAL_SHA = "23639cceab569f4d8392ae8d0b8046a5125068e484d18aadb1aabf22383aa16c"
+ORIGINAL_SHA = "61932316dc72969d89b89aae60ae1c7c72174a11b560b41174c25fe5ea7b9f71"
 LINUX_SHA = "0ad5d11a7e09eb89eda7409eab6cd58e1c3f7b92a49f12fef4e1bf0f18f4a4b6"
 PROPOSAL_SHA = "bcd92c713db8e1120b1df98e55f3a2701415cbc575177b6a2c006493c25eac60"
 
@@ -141,7 +141,9 @@ class WindowsBaselineTests(unittest.TestCase):
         self.assertEqual(self.source.count("__CREDENTIAL_FILE__"), 1)
         self.assertEqual(component(self.config, "local.file", "agent_credential")["attrs"],
                          {"filename": "__CREDENTIAL_FILE__", "is_secret": "true"})
-        auth = component(self.config, "prometheus.remote_write", "ingestion")["children"][0]["children"]
+        endpoint = component(self.config, "prometheus.remote_write", "ingestion")["children"][0]
+        self.assertEqual(endpoint["attrs"]["url"], "https://ingest.opsgrid.hacmieu.com/api/v1/write")
+        auth = endpoint["children"]
         self.assertEqual(auth[0]["attrs"], {"type": "Bearer", "credentials": "local.file.agent_credential.content"})
         rendered = self.source.replace("__CREDENTIAL_FILE__", "C:/fixture-only/agent-credential.jwt")
         self.assertEqual(component(parse_alloy(rendered), "local.file", "agent_credential")["attrs"]["filename"],

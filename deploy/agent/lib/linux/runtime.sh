@@ -2,7 +2,7 @@
 # Loading this module does not install, enroll, or change service state.
 
 API_BASE_URL_DEFAULT='https://api.opsgrid.hacmieu.com'
-GATEWAY_URL_DEFAULT='https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write'
+GATEWAY_URL_DEFAULT='https://ingest.opsgrid.hacmieu.com/api/v1/write'
 OUTPUT_PREFIX='[opsgrid-agent]'
 API_BASE_URL="$API_BASE_URL_DEFAULT"
 GATEWAY_URL="$GATEWAY_URL_DEFAULT"

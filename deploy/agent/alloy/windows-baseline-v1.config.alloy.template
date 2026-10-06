@@ -50,7 +50,7 @@ prometheus.relabel "windows_baseline_v1" {
 
 prometheus.remote_write "ingestion" {
   endpoint {
-    url = "https://opsgrid-ingest.bravecliff-c4215c1b.southeastasia.azurecontainerapps.io/api/v1/write"
+    url = "https://ingest.opsgrid.hacmieu.com/api/v1/write"
     authorization {
       type        = "Bearer"
       credentials = local.file.agent_credential.content
