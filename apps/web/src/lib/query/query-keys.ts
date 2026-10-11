@@ -1,5 +1,15 @@
 export const queryKeys = {
   me: ["me"] as const,
+  alerts: (organizationId: string) => ["alerts", organizationId] as const,
+  alertRules: (organizationId: string) => ["alerts", organizationId, "rules"] as const,
+  alertWriteCooldown: (actorId: string, organizationId: string, alertId: string) => ["alert-write-cooldown", actorId, organizationId, alertId] as const,
+  alertList: (organizationId: string, query: import("../../features/alerts/alert.types").AlertListQuery) => ["alerts", organizationId, "list", query] as const,
+  alert: (organizationId: string, alertId: string) => ["alerts", organizationId, "detail", alertId] as const,
+  alertEvents: (organizationId: string, alertId: string, page: number, pageSize: number) => ["alerts", organizationId, "events", alertId, page, pageSize] as const,
   organization: (id: string) => ["organization", id] as const,
   members: (id: string) => ["members", id] as const,
+  vms: (id: string) => ["vms", id] as const,
+  vm: (organizationId: string, vmId: string) => ["vm", organizationId, vmId] as const,
+  vmCurrentMetrics: (organizationId: string, vmId: string) => ["vm-metrics", organizationId, vmId, "current"] as const,
+  vmMetricsRange: (organizationId: string, vmId: string, range: string) => ["vm-metrics", organizationId, vmId, "range", range] as const,
 };

@@ -157,6 +157,15 @@ body {
   box-sizing: border-box;
 }
 
+/* Hide scrollbar chrome while preserving wheel, touch, and keyboard scrolling. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 button,
 input,
 select,

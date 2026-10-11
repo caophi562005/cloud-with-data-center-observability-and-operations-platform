@@ -48,7 +48,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps): J
           label: item.label,
           onSelect: () => navigate(item.href),
           icon: <PxlKitIcon name={item.icon} />,
-          active: pathname === item.href,
+          active: pathname === item.href || (item.href === "/vms" && pathname.startsWith("/vms/")),
         })),
     }))
     .filter((section) => section.items.length > 0);

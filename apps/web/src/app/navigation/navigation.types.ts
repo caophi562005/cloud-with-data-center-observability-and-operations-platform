@@ -13,7 +13,16 @@ export type IconName =
   | "check-circle"
   | "circle"
   | "user"
-  | "menu";
+  | "menu"
+  | "arrow-left"
+  | "edit"
+  | "trash"
+  | "close"
+  | "warning"
+  | "error"
+  | "clock"
+  | "copy"
+  | "refresh";
 
 export type NavigationItem = {
   id: string;
