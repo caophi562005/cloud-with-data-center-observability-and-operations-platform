@@ -56,9 +56,10 @@ export function resendConfirmationCode(
   });
 }
 
-export function me(): Promise<MeResponse> {
+export function me(signal?: AbortSignal): Promise<MeResponse> {
   return apiFetch<MeResponse>("/api/v1/me", {
     method: "GET",
+    signal,
     credentials: "include",
     headers: { Accept: "application/json" },
   });

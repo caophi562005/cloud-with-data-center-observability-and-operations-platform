@@ -90,6 +90,8 @@ export class ApiError extends Error {
   readonly statusCode: number;
   readonly code: string;
   readonly requestId?: string;
+  readonly retryAfterMs?: number;
+  readonly receivedAt = Date.now();
 
   constructor(payload: ApiErrorPayload);
   constructor(
@@ -97,12 +99,14 @@ export class ApiError extends Error {
     code: string,
     message: string,
     requestId?: string,
+    retryAfterMs?: number,
   );
   constructor(
     payloadOrStatusCode: ApiErrorPayload | number,
     code?: string,
     message?: string,
     requestId?: string,
+    retryAfterMs?: number,
   ) {
     const payload = normalizeApiErrorPayload(
       typeof payloadOrStatusCode === "number"
@@ -120,10 +124,21 @@ export class ApiError extends Error {
     this.statusCode = payload.statusCode;
     this.code = payload.code;
     this.requestId = payload.requestId;
+    this.retryAfterMs = typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs >= 0 ? retryAfterMs : undefined;
   }
 
   static fromResponse(response: Response, payload: unknown): ApiError {
-    return new ApiError(parseApiErrorPayload(payload, response.status));
+    const parsed = parseApiErrorPayload(payload, response.status);
+    const header = response.headers.get("Retry-After")?.trim();
+    let delay: number | undefined;
+    if (header && /^\d+$/.test(header)) {
+      const seconds = Number(header);
+      if (Number.isSafeInteger(seconds) && seconds <= Number.MAX_SAFE_INTEGER / 1000) delay = seconds * 1000;
+    } else if (header && /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(header)) {
+      const at = Date.parse(header);
+      if (Number.isFinite(at)) delay = Math.max(0, at - Date.now());
+    }
+    return new ApiError(parsed.statusCode, parsed.code, parsed.message, parsed.requestId, delay);
   }
 
   static generic(statusCode = 0): ApiError {

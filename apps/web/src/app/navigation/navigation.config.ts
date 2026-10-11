@@ -5,6 +5,9 @@ export const navigationSections: NavigationSection[] = [
     id: "overview",
     items: [
       { id: "dashboard", label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+      { id: "vms", label: "Virtual machines", href: "/vms", icon: "cloud" },
+      { id: "alerts", label: "Alerts", href: "/alerts", icon: "bell" },
+      { id: "alert-rules", label: "Alert rules", href: "/alert-rules", icon: "settings" },
     ],
   },
   {

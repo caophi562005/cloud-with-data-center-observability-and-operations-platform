@@ -31,10 +31,3 @@ export interface MembershipCreateInput {
   userId: string;
   role: Role;
 }
-
-export interface GettingStartedItem {
-  id: string;
-  label: string;
-  completed: boolean;
-  comingSoon?: boolean;
-}

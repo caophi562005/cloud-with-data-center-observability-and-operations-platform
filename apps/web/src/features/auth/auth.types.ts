@@ -44,22 +44,3 @@ export type MeResponse = {
 export type LoginResponse = {
   user: SafeUser;
 };
-
-/**
- * Legacy mock-client types are retained for compatibility with the scaffold's
- * unused mock module. Runtime authentication uses the API hooks below instead.
- */
-export type SignInInput = LoginInput & {
-  rememberMe: boolean;
-};
-
-export type AuthUser = {
-  email: string;
-  provider: "password" | "google";
-};
-
-export interface AuthClient {
-  signIn(input: SignInInput): Promise<AuthUser>;
-  signInWithGoogle(): Promise<AuthUser>;
-  signOut(): Promise<void>;
-}

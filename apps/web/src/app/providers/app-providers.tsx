@@ -11,7 +11,9 @@ import {
   PxlKitToastProvider,
   useDarkMode,
 } from "@pxlkit/ui-kit";
+import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../lib/api/api-error";
+import { sessionCacheEpoch } from "../../lib/query/session-cache";
 import { useMe } from "../../features/auth/hooks/use-auth";
 import { QueryProvider } from "./query-provider";
 import type { Organization } from "../../types/domain";
@@ -41,14 +43,21 @@ function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolved, setMode]);
   const value = useMemo(() => ({ resolved, toggle }), [resolved, toggle]);
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
 }
 
 function TenantProvider({ children }: { children: ReactNode }) {
   const meQuery = useMe();
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(
-    null,
-  );
+  const client = useQueryClient();
+  const sessionKey = `${sessionCacheEpoch(client)}:${meQuery.data?.user.id ?? "anonymous"}`;
+  const [selection, setSelection] = useState<{
+    sessionKey: string;
+    organizationId: string;
+  } | null>(null);
+  const selectedOrganizationId =
+    selection?.sessionKey === sessionKey ? selection.organizationId : null;
   const organizations = useMemo<Organization[]>(
     () =>
       meQuery.data?.organizations.map((organization) => ({
@@ -61,18 +70,22 @@ function TenantProvider({ children }: { children: ReactNode }) {
   );
 
   const currentOrganization =
-    organizations.find((organization) => organization.id === selectedOrganizationId) ??
+    organizations.find(
+      (organization) => organization.id === selectedOrganizationId,
+    ) ??
     organizations[0] ??
     null;
   const effectiveSelectedOrganizationId = currentOrganization?.id ?? null;
 
   const selectOrganization = useCallback(
     (organizationId: string) => {
-      if (organizations.some((organization) => organization.id === organizationId)) {
-        setSelectedOrganizationId(organizationId);
+      if (
+        organizations.some((organization) => organization.id === organizationId)
+      ) {
+        setSelection({ sessionKey, organizationId });
       }
     },
-    [organizations],
+    [organizations, sessionKey],
   );
 
   const value = useMemo<TenantContextValue>(
@@ -96,7 +109,9 @@ function TenantProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
+  return (
+    <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
+  );
 }
 
 // Hooks are intentionally exported beside their providers for the app surface.

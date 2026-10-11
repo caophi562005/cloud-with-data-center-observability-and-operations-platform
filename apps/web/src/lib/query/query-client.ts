@@ -1,4 +1,5 @@
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import { expireClientSession } from "./session-cache";
 import { isApiError } from "../api/api-error";
 
 const QUERY_STALE_TIME = 30_000;
@@ -18,7 +19,13 @@ function retryDelay(attemptIndex: number): number {
 }
 
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const client: QueryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error) => expireClientSession(client, error),
+    }),
+    mutationCache: new MutationCache({
+      onError: (error) => expireClientSession(client, error),
+    }),
     defaultOptions: {
       queries: {
         staleTime: QUERY_STALE_TIME,
@@ -31,6 +38,7 @@ export function createQueryClient(): QueryClient {
       },
     },
   });
+  return client;
 }
 
 export const queryClient = createQueryClient();
