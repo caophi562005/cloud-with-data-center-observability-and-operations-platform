@@ -15,14 +15,37 @@ variable "api_name" {
   default = "opsgrid-dev-test-api"
 }
 
-variable "vpc_id" {
-  description = "Existing VPC; not created or destroyed by this root."
+variable "network_name" {
+  description = "Name of the dedicated temporary VPC created by dev/test."
   type        = string
+  default     = "opsgrid-dev-test"
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9-]{1,26}[a-zA-Z0-9]$", var.network_name))
+    error_message = "Use a 3-28 character alphanumeric/hyphen network name."
+  }
 }
 
-variable "subnet_ids" {
-  description = "Existing public subnets in at least two availability zones."
-  type        = set(string)
+variable "vpc_cidr" {
+  description = "Private IPv4 VPC CIDR (/16 to /18); two public subnet CIDRs are derived with 8 additional prefix bits."
+  type        = string
+  default     = "10.42.0.0/16"
+  validation {
+    condition = can(cidrnetmask(var.vpc_cidr)) && can(cidrsubnet(var.vpc_cidr, 8, 1)) && try(
+      tonumber(split("/", var.vpc_cidr)[1]) >= 16 && tonumber(split("/", var.vpc_cidr)[1]) <= 18,
+      false
+    ) && can(regex("^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)", cidrhost(var.vpc_cidr, 0)))
+    error_message = "Supply an RFC1918 IPv4 CIDR with prefix /16 to /18."
+  }
+}
+
+variable "availability_zones" {
+  description = "Exactly two distinct regional availability zones for the public ALBs and Fargate tasks."
+  type        = list(string)
+  default     = ["ap-southeast-1a", "ap-southeast-1b"]
+  validation {
+    condition     = length(var.availability_zones) == 2 && length(distinct(var.availability_zones)) == 2 && alltrue([for az in var.availability_zones : can(regex("^${var.region}[a-z]$", az))])
+    error_message = "Supply two distinct availability zones in the configured AWS region."
+  }
 }
 
 variable "allowed_ingress_cidrs" {
@@ -41,7 +64,7 @@ variable "certificate_arn" {
 }
 
 variable "hosted_zone_id" {
-  description = "Existing public Route53 hosted zone; only the API record is temporary."
+  description = "Existing public Route53 hosted zone; API and ingest records are temporary."
   type        = string
 }
 

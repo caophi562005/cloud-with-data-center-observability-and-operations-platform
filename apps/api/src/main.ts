@@ -9,16 +9,19 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor.js';
+import { snsBodyMiddleware } from './modules/alerts/sns/sns-body.middleware.js';
 
 export type BootstrapConfig = {
   webUrl: string;
   nodeEnv: string;
+  snsAlertsEnabled?: boolean;
 };
 
 export async function configureApp(
   app: INestApplication,
   configuration: BootstrapConfig,
 ): Promise<void> {
+  app.use(snsBodyMiddleware(configuration.snsAlertsEnabled ?? false));
   app.use(cookieParser());
   app.use(helmet());
   app.setGlobalPrefix('api/v1');
@@ -54,6 +57,7 @@ export async function bootstrap(): Promise<void> {
   await configureApp(app, {
     webUrl: config.getOrThrow<string>('app.webUrl'),
     nodeEnv,
+    snsAlertsEnabled: config.getOrThrow<{ enabled: boolean }>('snsAlerts').enabled,
   });
   await app.listen(config.getOrThrow<number>('app.port'));
 }

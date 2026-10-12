@@ -8,3 +8,7 @@ export { envSchema, parseEnv } from './env.schema.js';
 export type { Env } from './env.schema.js';
 export { createRedisConfig, redisConfig } from './redis.config.js';
 export type { RedisConfig } from './redis.config.js';
+export { createMetricsConfig, metricsConfig } from './metrics.config.js';
+export type { MetricsConfig, MetricsQueryConfig } from './metrics.config.js';
+export { createSnsAlertsConfig, snsAlertsConfig } from './sns-alerts.config.js';
+export type { SnsAlertsConfig } from './sns-alerts.config.js';

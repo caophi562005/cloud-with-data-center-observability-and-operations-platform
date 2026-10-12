@@ -2,6 +2,23 @@ locals {
   name          = var.name
   tags          = var.tags
   backend_ports = toset([var.database_port, var.redis_port])
+  # Never use unknown new subnet IDs as for_each keys.
+  subnet_ids_by_index = { for index, subnet_id in var.subnet_ids : tostring(index) => subnet_id }
+  amp_enabled         = var.amp_workspace_arn != null
+  amp_workspace_id    = local.amp_enabled ? split("/", var.amp_workspace_arn)[1] : ""
+  # AMP endpoints/modes are nonsecret and owned here. Never inject stale cloud credentials.
+  api_secret_names = local.amp_enabled ? setsubtract(var.runtime_secret_names, toset([
+    "METRICS_QUERY_URL", "METRICS_QUERY_AUTH_MODE", "METRICS_USERNAME", "METRICS_QUERY_TOKEN"
+  ])) : var.runtime_secret_names
+}
+
+module "amp_proxy" {
+  source = "../ecs-amp-proxy"
+  count  = local.amp_enabled ? 1 : 0
+
+  region           = var.region
+  image_digest_uri = var.amp_proxy_image_digest_uri
+  log_group_name   = aws_cloudwatch_log_group.api.name
 }
 
 data "aws_vpc" "selected" {
@@ -18,7 +35,7 @@ data "aws_vpc" "selected" {
   }
 }
 data "aws_subnet" "selected" {
-  for_each = var.subnet_ids
+  for_each = local.subnet_ids_by_index
   id       = each.value
   lifecycle {
     postcondition {
@@ -29,7 +46,7 @@ data "aws_subnet" "selected" {
 }
 # Default subnets can inherit the VPC main route table without explicit associations.
 data "aws_route_tables" "explicit" {
-  for_each = var.subnet_ids
+  for_each = local.subnet_ids_by_index
   vpc_id   = var.vpc_id
   filter {
     name   = "association.subnet-id"
@@ -44,7 +61,7 @@ data "aws_route_table" "main" {
   }
 }
 data "aws_route_table" "public" {
-  for_each       = var.subnet_ids
+  for_each       = local.subnet_ids_by_index
   route_table_id = length(data.aws_route_tables.explicit[each.key].ids) > 0 ? one(data.aws_route_tables.explicit[each.key].ids) : data.aws_route_table.main.id
   lifecycle {
     postcondition {
@@ -116,44 +133,17 @@ resource "aws_cloudwatch_log_group" "api" {
   retention_in_days = 1
   tags              = local.tags
 }
-data "aws_iam_policy_document" "execution_trust" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [var.account_id]
-    }
-    condition {
-      test     = "ArnLike"
-      variable = "aws:SourceArn"
-      values   = ["arn:aws:ecs:${var.region}:${var.account_id}:*"]
-    }
-  }
-}
-resource "aws_iam_role" "execution" {
-  name               = "${local.name}-execution"
-  assume_role_policy = data.aws_iam_policy_document.execution_trust.json
-  tags               = local.tags
-}
-data "aws_iam_policy_document" "execution" {
-  statement {
-    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["arn:aws:logs:${var.region}:${var.account_id}:log-group:/ecs/${local.name}/api:*"]
-  }
-  statement {
-    actions   = ["ssm:GetParameters"]
-    resources = [for name in sort(tolist(var.runtime_secret_names)) : "arn:aws:ssm:${var.region}:${var.account_id}:parameter${var.parameter_path}/${name}"]
-  }
-}
-resource "aws_iam_role_policy" "execution" {
-  name   = "scoped-runtime"
-  role   = aws_iam_role.execution.id
-  policy = data.aws_iam_policy_document.execution.json
+module "execution_role" {
+  source = "../ecs-execution-role"
+
+  name          = "${local.name}-execution"
+  region        = var.region
+  account_id    = var.account_id
+  log_group_arn = aws_cloudwatch_log_group.api.arn
+  parameter_arns = [for name in sort(tolist(local.api_secret_names)) :
+    "arn:aws:ssm:${var.region}:${var.account_id}:parameter${var.parameter_path}/${name}"
+  ]
+  tags = local.tags
 }
 
 # Names are nonsecret; ephemeral values must never determine resource addresses.
@@ -177,7 +167,7 @@ module "alb" {
   internal                   = false
   ip_address_type            = "ipv4"
   vpc_id                     = var.vpc_id
-  subnets                    = sort(tolist(var.subnet_ids))
+  subnets                    = var.subnet_ids
   create_security_group      = false
   security_groups            = [module.alb_security_group.security_group_id]
   enable_deletion_protection = false
@@ -239,10 +229,11 @@ module "api_service" {
   source  = "terraform-aws-modules/ecs/aws//modules/service"
   version = "7.6.1"
 
-  name          = local.name
-  cluster_arn   = module.api_cluster.arn
-  cpu           = var.cpu
-  memory        = var.memory
+  name        = local.name
+  cluster_arn = module.api_cluster.arn
+  cpu         = var.cpu
+  # Reserve headroom for signing without shrinking the existing application's budget.
+  memory        = local.amp_enabled ? (var.memory == 1024 ? 2048 : 1024) : var.memory
   desired_count = 1
   launch_type   = "FARGATE"
   capacity_provider_strategy = {
@@ -255,31 +246,54 @@ module "api_service" {
   wait_for_steady_state             = true
   deployment_circuit_breaker        = { enable = true, rollback = true }
   health_check_grace_period_seconds = 120
-  subnet_ids                        = sort(tolist(var.subnet_ids))
+  subnet_ids                        = var.subnet_ids
   assign_public_ip                  = true
   create_security_group             = false
   security_group_ids                = [module.api_security_group.security_group_id]
   create_task_exec_iam_role         = false
   create_task_exec_policy           = false
-  task_exec_iam_role_arn            = aws_iam_role.execution.arn
+  task_exec_iam_role_arn            = module.execution_role.arn
   tasks_iam_role_policies           = {}
-  tasks_iam_role_statements         = null
-  runtime_platform                  = { operating_system_family = "LINUX", cpu_architecture = "X86_64" }
+  tasks_iam_role_statements = local.amp_enabled || var.sns_alerts_enabled ? concat(local.amp_enabled ? [{
+    sid       = "AMPQuery"
+    effect    = "Allow"
+    actions   = ["aps:QueryMetrics", "aps:ListRules"]
+    resources = [var.amp_workspace_arn]
+    }] : [], var.sns_alerts_enabled ? [{
+    sid       = "SNSAlertConfirmation"
+    effect    = "Allow"
+    actions   = ["sns:ConfirmSubscription"]
+    resources = [var.sns_alerts_topic_arn]
+  }] : []) : null
+  runtime_platform = { operating_system_family = "LINUX", cpu_architecture = "X86_64" }
   load_balancer = {
     api = { target_group_arn = module.alb.target_groups["api"].arn, container_name = "api", container_port = 3000 }
   }
-  container_definitions = {
+  container_definitions = merge({
     api = {
-      essential                   = true
-      image                       = var.image_digest_uri
-      readonlyRootFilesystem      = true
-      linuxParameters             = { initProcessEnabled = true, capabilities = { add = [], drop = ["ALL"] } }
-      environment                 = []
-      mountPoints                 = []
-      systemControls              = []
-      volumesFrom                 = []
-      portMappings                = [{ name = "http", containerPort = 3000, hostPort = 3000, protocol = "tcp" }]
-      secrets                     = [for key in sort(tolist(var.runtime_secret_names)) : { name = key, valueFrom = "arn:aws:ssm:${var.region}:${var.account_id}:parameter${var.parameter_path}/${key}" }]
+      essential              = true
+      image                  = var.image_digest_uri
+      readonlyRootFilesystem = true
+      linuxParameters        = { initProcessEnabled = true, capabilities = { add = [], drop = ["ALL"] } }
+      cpu                    = local.amp_enabled ? var.cpu - 64 : null
+      memory                 = local.amp_enabled ? (var.memory == 1024 ? 2048 : 1024) - 128 : null
+      memoryReservation      = local.amp_enabled ? 512 : null
+      dependsOn              = local.amp_enabled ? [{ containerName = "amp-sigv4", condition = "START" }] : []
+      environment = concat(local.amp_enabled ? [
+        { name = "METRICS_QUERY_AUTH_MODE", value = "none" },
+        { name = "METRICS_QUERY_URL", value = "http://127.0.0.1:8005/workspaces/${local.amp_workspace_id}" },
+        ] : [], var.sns_alerts_enabled ? [
+        { name = "SNS_ALERTS_ENABLED", value = "true" },
+        { name = "SNS_ALERTS_TOPIC_ARN", value = var.sns_alerts_topic_arn },
+        { name = "SNS_ALERTS_REGION", value = var.region },
+      ] : [{ name = "SNS_ALERTS_ENABLED", value = "false" }])
+      dockerLabels   = { "opsgrid.runtime-version" = tostring(var.secret_value_version) }
+      mountPoints    = []
+      systemControls = []
+      volumesFrom    = []
+      portMappings   = [{ name = "http", containerPort = 3000, hostPort = 3000, protocol = "tcp" }]
+      # Resource ARN references order parameter writes before this task definition, not all IAM data reads.
+      secrets                     = [for key in sort(tolist(local.api_secret_names)) : { name = key, valueFrom = aws_ssm_parameter.runtime[key].arn }]
       create_cloudwatch_log_group = false
       enable_cloudwatch_logging   = true
       logConfiguration = {
@@ -294,14 +308,17 @@ module "api_service" {
         startPeriod = 60
       }
     }
-  }
+  }, local.amp_enabled ? { "amp-sigv4" = module.amp_proxy[0].container_definition } : {})
   tags       = local.tags
-  depends_on = [aws_iam_role_policy.execution, aws_ssm_parameter.runtime]
+  depends_on = [module.execution_role]
 }
 
 # The hosted zone is persistent and already exists; only this API record is temporary.
 data "aws_route53_zone" "api" {
   zone_id = var.hosted_zone_id
+  # Keep this optional SDK field non-null while the VPC defers data reads.
+  # The provider replaces it with the actual zone type; validate that below.
+  private_zone = false
 
   lifecycle {
     postcondition {

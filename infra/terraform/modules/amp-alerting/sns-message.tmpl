@@ -1,0 +1,29 @@
+{{- define "opsgrid.sns.message" -}}
+{
+  "schemaVersion": 1,
+  "stringEncoding": "urlquery",
+  "receiver": "{{ .Receiver | urlquery }}",
+  "status": "{{ .Status | urlquery }}",
+  "groupLabels": {
+    "organization_id": "{{ index .GroupLabels "organization_id" | urlquery }}",
+    "vm_id": "{{ index .GroupLabels "vm_id" | urlquery }}",
+    "alertname": "{{ index .GroupLabels "alertname" | urlquery }}"
+  },
+  "alerts": [{{ range $index, $alert := .Alerts }}{{ if $index }},{{ end }}{
+    "status": "{{ $alert.Status | urlquery }}",
+    "labels": {
+      "organization_id": "{{ index $alert.Labels "organization_id" | urlquery }}",
+      "vm_id": "{{ index $alert.Labels "vm_id" | urlquery }}",
+      "alertname": "{{ index $alert.Labels "alertname" | urlquery }}",
+      "severity": "{{ index $alert.Labels "severity" | urlquery }}"
+    },
+    "annotations": {
+      "summary": "{{ index $alert.Annotations "summary" | urlquery }}",
+      "description": "{{ index $alert.Annotations "description" | urlquery }}"
+    },
+    "fingerprint": "{{ $alert.Fingerprint | urlquery }}",
+    "startsAt": "{{ $alert.StartsAt.UTC.Format "2006-01-02T15:04:05.999999999Z" | urlquery }}",
+    "endsAt": "{{ $alert.EndsAt.UTC.Format "2006-01-02T15:04:05.999999999Z" | urlquery }}"
+  }{{ end }}]
+}
+{{- end -}}

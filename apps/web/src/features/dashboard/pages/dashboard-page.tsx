@@ -1,11 +1,9 @@
 import type { JSX } from "react";
 import { useMe } from "../../auth/hooks/use-auth";
 import { useOrganizationMembers } from "../../memberships/hooks/use-members";
-import { gettingStartedItems } from "../../../mocks/getting-started";
 import { useTenant } from "../../../app/providers/app-providers";
 import { DashboardSummary } from "../components/dashboard-summary";
 import { DashboardWelcome } from "../components/dashboard-welcome";
-import { GettingStarted } from "../components/getting-started";
 import { OrganizationOverview } from "../components/organization-overview";
 import { RecentMembers } from "../components/recent-members";
 
@@ -91,10 +89,7 @@ export function DashboardPage(): JSX.Element {
         memberCount={membersQuery.data ? members.length : null}
         role={currentOrganization.role}
       />
-      <div className="grid min-w-0 grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] items-start gap-5 max-[901px]:grid-cols-[minmax(0,1fr)]">
-        <OrganizationOverview organization={currentOrganization} />
-        <GettingStarted items={gettingStartedItems} />
-      </div>
+      <OrganizationOverview organization={currentOrganization} />
       {membersQuery.isPending ? (
         <DashboardState
           title="Loading members"

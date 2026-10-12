@@ -8,7 +8,7 @@ interface RedisCacheClient {
   set?: (
     key: string,
     value: string,
-    options: { EX: number },
+    options: { EX: number } | { PXAT: number },
   ) => Promise<unknown>;
   del?: (...keys: string[]) => Promise<unknown>;
   scanIterator?: (options?: { MATCH?: string }) => AsyncIterable<unknown>;
@@ -64,6 +64,24 @@ export class CacheService {
       }
 
       await client.set(key, serialized, { EX: ttlSeconds });
+    } catch {
+      this.warn('write');
+    }
+  }
+
+  /** Absolute deadline: delayed network writes must not extend secret retention. */
+  async setUntil<T>(key: string, value: T, expiresAt: Date): Promise<void> {
+    try {
+      const client = this.getClient();
+      const deadline = expiresAt.getTime();
+      if (!client.set || !Number.isFinite(deadline) || deadline <= Date.now())
+        return;
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) {
+        this.warn('write');
+        return;
+      }
+      await client.set(key, serialized, { PXAT: deadline });
     } catch {
       this.warn('write');
     }

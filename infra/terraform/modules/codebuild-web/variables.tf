@@ -1,5 +1,5 @@
 variable "project_name" {
-  description = "Project prefix for the private web PR build."
+  description = "Project prefix for the main-only frontend deployment."
   type        = string
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{0,24}$", var.project_name))
@@ -8,7 +8,7 @@ variable "project_name" {
 }
 
 variable "environment" {
-  description = "Environment prefix for the private web PR build."
+  description = "Environment prefix for the main-only frontend deployment."
   type        = string
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{0,15}$", var.environment))
@@ -71,6 +71,17 @@ variable "codebuild_queued_timeout_minutes" {
   validation {
     condition     = var.codebuild_queued_timeout_minutes >= 5 && var.codebuild_queued_timeout_minutes <= 480 && floor(var.codebuild_queued_timeout_minutes) == var.codebuild_queued_timeout_minutes
     error_message = "Queue timeout must be a whole number from 5 to 480 minutes."
+  }
+}
+
+variable "api_origin" {
+  description = "Public build-time API origin; never credentials, a base path or a backend runtime map."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = var.api_origin == "https://api.opsgrid.hacmieu.com"
+    error_message = "api_origin must be the approved public HTTPS API origin without a path or trailing slash."
   }
 }
 

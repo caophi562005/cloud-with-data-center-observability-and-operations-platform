@@ -80,8 +80,13 @@ module "s3_opsgrid_web" {
     aws.global = aws.global
   }
 
-  bucket_name = "${var.project_name}-${var.environment}-web-491333778094"
-  site_name   = "${var.project_name}-${var.environment}-web"
+  bucket_name       = "${var.project_name}-${var.environment}-web-491333778094"
+  site_name         = "${var.project_name}-${var.environment}-web"
+  frontend_hostname = var.frontend_dns_name
+  installer_redirect = {
+    hostname        = var.installer_dns_name
+    certificate_arn = var.installer_certificate_arn
+  }
   tags = merge(local.tags, {
     Component = "opsgrid-web"
     Name      = "${var.project_name}-${var.environment}-web"
@@ -98,7 +103,18 @@ module "codebuild_web" {
   github_connection_arn            = var.github_connection_arn
   web_bucket_name                  = module.s3_opsgrid_web.bucket_name
   web_distribution_id              = module.s3_opsgrid_web.distribution_id
+  api_origin                       = "https://api.opsgrid.hacmieu.com"
   codebuild_build_timeout_minutes  = var.codebuild_build_timeout_minutes
   codebuild_queued_timeout_minutes = var.codebuild_queued_timeout_minutes
   additional_tags                  = local.tags
+}
+
+module "amp" {
+  source = "../../../modules/amp"
+
+  workspace_alias = "${var.project_name}-${var.environment}-metrics"
+  tags = merge(local.tags, {
+    Component = "metrics"
+    Name      = "${var.project_name}-${var.environment}-metrics"
+  })
 }

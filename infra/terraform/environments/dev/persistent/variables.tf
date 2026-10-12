@@ -121,8 +121,55 @@ variable "api_repository_name" {
   }
 }
 
+variable "installer_dns_name" {
+  description = "Installer-only hostname on the existing SPA CloudFront distribution."
+  type        = string
+  default     = "get.opsgrid.hacmieu.com"
+  nullable    = false
+
+  validation {
+    condition     = length(var.installer_dns_name) <= 253 && can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", var.installer_dns_name))
+    error_message = "installer_dns_name must be a lowercase fully qualified DNS hostname without a trailing dot."
+  }
+}
+
+variable "installer_certificate_arn" {
+  description = "Explicit manually managed CloudFront certificate ARN. Verify ISSUED status and installer hostname coverage before apply; this root does not create or delete ACM certificates."
+  type        = string
+  default     = "arn:aws:acm:us-east-1:491333778094:certificate/3e0f85dc-2aa2-4af8-9cd7-a7f6d470a7e7"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^arn:aws:acm:us-east-1:491333778094:certificate/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.installer_certificate_arn))
+    error_message = "installer_certificate_arn must be an ACM certificate ARN in account 491333778094 and us-east-1 for CloudFront."
+  }
+}
+
+variable "installer_hosted_zone_id" {
+  description = "Existing public Route53 zone; this root owns only the installer A/AAAA aliases, not the zone or ACM validation records."
+  type        = string
+  default     = "Z04903171FP3IXRU1BXRK"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^Z[A-Z0-9]+$", var.installer_hosted_zone_id))
+    error_message = "installer_hosted_zone_id must be a Route53 hosted zone ID without the /hostedzone/ prefix."
+  }
+}
+
+variable "frontend_dns_name" {
+  description = "Optional approved production frontend hostname; shares the existing installer distribution/certificate."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.frontend_dns_name == null ? true : var.frontend_dns_name == "opsgrid.hacmieu.com"
+    error_message = "frontend_dns_name must be null or the approved opsgrid.hacmieu.com hostname."
+  }
+}
+
 variable "enable_codebuild_web" {
-  description = "Explicitly opt into the repository's private PR build; disabled by default."
+  description = "Explicitly opt into the repository's main PUSH frontend deployment; disabled by default."
   type        = bool
   default     = false
 }

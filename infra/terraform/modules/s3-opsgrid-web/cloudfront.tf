@@ -15,13 +15,15 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   }
 }
 
-# This Registry module owns the native distribution, OAC and SPA function.
+# This Registry module owns the native distribution, OAC and viewer-request function.
+# Keep the function key/name stable when adding hostname-scoped installer routing.
 module "cloudfront" {
   source    = "terraform-aws-modules/cloudfront/aws"
   version   = "6.7.1"
   providers = { aws = aws.global }
 
   comment             = "${var.site_name} private S3 + FREE plan"
+  aliases             = var.installer_redirect == null ? null : concat([var.installer_redirect.hostname], var.frontend_hostname == null ? [] : [var.frontend_hostname])
   enabled             = true
   default_root_object = "index.html"
   http_version        = "http2"
@@ -55,8 +57,10 @@ module "cloudfront" {
     spa-rewrite = {
       name    = "${var.site_name}-spa-rewrite"
       runtime = "cloudfront-js-2.0"
-      comment = "Rewrite extensionless React routes, not missing static assets"
-      code    = file("${path.module}/spa-rewrite.js")
+      comment = var.installer_redirect == null ? "Rewrite extensionless React routes, not missing static assets" : "Route installer hostname to GitHub; preserve SPA and static assets"
+      code = var.installer_redirect == null ? file("${path.module}/spa-rewrite.js") : templatefile("${path.module}/installer-router.js.tftpl", {
+        installer_hostname_json = jsonencode(var.installer_redirect.hostname)
+      })
       publish = true
     }
   }
@@ -80,10 +84,17 @@ module "cloudfront" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
     cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+    # CloudFront selects behaviors by path, not hostname. Also reject /assets/*
+    # on the installer hostname rather than accidentally serving SPA assets.
+    function_association = var.installer_redirect == null ? null : {
+      viewer-request = { function_key = "spa-rewrite" }
+    }
   }]
   viewer_certificate = {
-    cloudfront_default_certificate = true
-    minimum_protocol_version       = "TLSv1"
+    cloudfront_default_certificate = var.installer_redirect == null
+    acm_certificate_arn            = var.installer_redirect == null ? null : var.installer_redirect.certificate_arn
+    ssl_support_method             = var.installer_redirect == null ? null : "sni-only"
+    minimum_protocol_version       = var.installer_redirect == null ? "TLSv1" : "TLSv1.2_2021"
   }
 }
 

@@ -7,7 +7,11 @@ type RedisMock = {
   get: ReturnType<typeof vi.fn<(key: string) => Promise<string | null>>>;
   set: ReturnType<
     typeof vi.fn<
-      (key: string, value: string, options: { EX: number }) => Promise<unknown>
+      (
+        key: string,
+        value: string,
+        options: { EX: number } | { PXAT: number },
+      ) => Promise<unknown>
     >
   >;
   del: ReturnType<typeof vi.fn<(...keys: string[]) => Promise<unknown>>>;
@@ -82,6 +86,47 @@ describe('CacheService', () => {
       JSON.stringify({ role: 'ADMIN' }),
       { EX: 60 },
     );
+  });
+
+  it('writes an absolute expiration so a delayed Redis SET never extends retention', async () => {
+    const redis = makeRedisMock();
+    const cache = new CacheService(redis);
+    const expiresAt = new Date(Date.now() + 60_000);
+    await cache.setUntil('key', { encrypted: true }, expiresAt);
+    expect(redis.set).toHaveBeenCalledWith(
+      'key',
+      JSON.stringify({ encrypted: true }),
+      { PXAT: expiresAt.getTime() },
+    );
+    await cache.setUntil('expired', {}, new Date(0));
+    await cache.setUntil('invalid', {}, new Date('invalid'));
+    expect(redis.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows absolute-expiry write failures without logging secrets', async () => {
+    const redis = makeRedisMock();
+    redis.set.mockRejectedValueOnce(
+      new Error('secret-key ciphertext Redis failure'),
+    );
+    const cache = new CacheService(redis);
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      await expect(
+        cache.setUntil(
+          'secret-key',
+          { token: 'secret-token' },
+          new Date(Date.now() + 60_000),
+        ),
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(
+        /secret-key|secret-token|ciphertext/,
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('warns and swallows Redis client acquisition failures on writes', async () => {

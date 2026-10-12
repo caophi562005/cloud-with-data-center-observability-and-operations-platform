@@ -91,14 +91,21 @@ Người dùng đăng nhập được, thuộc một organization và chỉ truy
 
 ## Phase 2 — VM Monitoring MVP
 
-**Mục tiêu:** tạo phiên bản demo đầu tiên và hoàn thiện luồng giám sát VM.
+**Mục tiêu:** hoàn thiện luồng giám sát VM end-to-end, hỗ trợ VM on-prem/remote khác network mà không cần mở inbound port.
 
 ### Phạm vi
 
 #### VM Inventory
 - Thêm/xóa/cập nhật VM.
-- Hostname, IP, OS, environment, tags.
-- Health status.
+- Hostname, IP, OS.
+- Tags theo dạng `key:value`, ví dụ `env:production`, `role:database`, `site:hcm`.
+- Thêm/sửa/xóa tag và lọc VM theo tag.
+- Health status: `Healthy`, `Warning`, `Critical`, `Disconnected`.
+
+#### Agent Enrollment
+- Khi tạo VM, NestJS sinh enrollment token dùng một lần.
+- Người dùng chạy install script trên VM để cài **Grafana Alloy**.
+- Alloy nhận agent token riêng và gửi metrics ra ngoài bằng HTTPS.
 
 #### Metrics Collection
 Thu thập:
@@ -109,70 +116,167 @@ Thu thập:
 - Load.
 - Uptime.
 
-Có thể bắt đầu bằng Node Exporter/agent và Prometheus-compatible metrics backend.
+Alloy gửi metrics bằng **Prometheus Remote Write** qua HTTPS `443` tới **Ingestion Gateway**.
+
+#### Ingestion Gateway
+- Xác thực agent token.
+- Xác định `vm_id` và `organization_id`.
+- Gắn trusted labels cho metrics.
+- Validate/rate limit cơ bản.
+- Forward metrics vào **AWS AMP** qua **`aws-sigv4-proxy` sidecar** của Ingestion Gateway trên ECS Fargate (AWS IAM/SigV4).
+
+#### Data Storage
+- **Neon/PostgreSQL:** VM inventory, organization, tags, agent metadata và enrollment token metadata.
+- **AWS AMP:** metrics time-series theo Prometheus-compatible API.
+- Không lưu CPU/RAM/Disk history trong PostgreSQL.
 
 #### React Monitoring Dashboard
 - Danh sách VM.
-- Healthy / Warning / Critical.
+- Healthy / Warning / Critical / Disconnected.
 - CPU/RAM/Disk cards.
 - Time-series charts.
 - Trang chi tiết từng VM.
+- Filter theo tags.
 
 ### Luồng
 
 ```text
-VM
- |
- v
-Exporter / Agent
- |
- v
-Metrics Backend
- |
- v
-NestJS API
- |
- v
-React Dashboard
+Add VM
+  |
+  v
+NestJS --> Neon/PostgreSQL
+  |
+  +--> Enrollment Token
+          |
+          v
+      Install Alloy on VM
+          |
+          | HTTPS 443 / Remote Write
+          v
+   Ingestion Gateway (Go)
+          |
+          v
+   SigV4 sidecar (ECS)
+          |
+          v
+       AWS AMP <--- SigV4 sidecar (API ECS) <--- NestJS API <--- React Dashboard
 ```
 
 ### Kết quả
-Có thể demo nhiều VM và theo dõi CPU, RAM, Disk, Network, uptime trực tiếp trên React dashboard.
+Có thể demo nhiều VM ở cùng hoặc khác network, kể cả VM private/on-prem sau NAT, miễn VM có outbound HTTPS. Dashboard theo dõi CPU, RAM, Disk, Network, Load, Uptime và lọc VM theo tags.
 
 **Đây là milestone demo đầu tiên của dự án.**
 
 ---
 
-## Phase 3 — Alerting & Incident Operations
+## Phase 3 — AWS AMP Alerting & Alert Operations
 
-**Mục tiêu:** chuyển hệ thống từ chỉ quan sát sang hỗ trợ vận hành.
+**Mục tiêu:** mở rộng VM Monitoring thành hệ thống cảnh báo và tiếp nhận cảnh báo vận hành ngay trên React. Phase này theo hướng **alert-centric, gọn như SigNoz**: tập trung vào trạng thái cảnh báo, mức độ nghiêm trọng, acknowledge, comment và lịch sử; **chưa xây Incident Management**.
 
-### Phạm vi
-- Alert rules.
-- Threshold-based alerts.
-- Severity.
-- Notification.
-- Acknowledge alert.
-- Incident creation.
-- Incident assignment.
-- Incident timeline.
-- Resolve/close incident.
-- Liên kết alert với resource và incident.
+### Kiến trúc đã chọn
 
-### Luồng
+- **Amazon Managed Service for Prometheus (AWS AMP)** lưu metrics, evaluate Prometheus alert rules và cung cấp **Managed Alertmanager**. Không self-host Prometheus hay Alertmanager cho Phase 3.
+- **Grafana Alloy** gửi Prometheus Remote Write qua **Ingestion Gateway (Go)**; Gateway forward tới AMP bằng **`aws-sigv4-proxy` sidecar** và **ECS Task Role** (`aps:RemoteWrite`).
+- **NestJS API** query metrics AMP qua `aws-sigv4-proxy` sidecar trong ECS task của API. Ứng dụng chỉ dùng Prometheus-compatible HTTP API và `auth=none` khi gọi `localhost`; sidecar đảm nhiệm AWS SigV4. Không hardcode AWS access key/secret key trong ứng dụng.
+- **AMP Rule Groups** đánh giá alert rules; **AMP Managed Alertmanager** group/dedup/route notification đến **Amazon SNS Standard Topic**.
+- **Amazon SNS** chuyển notification qua **HTTPS subscription** đến NestJS; NestJS xác thực SNS, chuyển payload về domain Alert rồi lưu **PostgreSQL**.
+- **React + PxlKit** là giao diện chính để xem cảnh báo, acknowledge và ghi chú. Không dùng Grafana UI làm UI vận hành.
 
 ```text
-CPU > 90% for 5 minutes
-          |
-          v
-        Alert
-          |
-          v
-    Incident #001
+VM / Grafana Alloy
+        |
+        | Prometheus Remote Write / HTTPS
+        v
+Ingestion Gateway (Go) + SigV4 sidecar (ECS)
+        |
+        v
+AWS AMP Workspace (metrics)
+        |
+        v
+AMP Rule Group Namespace (PromQL alert rules)
+        |
+        v
+AMP Managed Alertmanager (group / dedup / route)
+        |
+        v
+Amazon SNS Standard Topic
+        |
+        | HTTPS subscription / SNS Notification
+        v
+NestJS (verify SNS -> CanonicalAlertEvent -> AlertService)
+        |
+        v
+PostgreSQL (alerts, alert_events)
+        |
+        v
+React Alerts UI (PxlKit)
+
+Luồng query monitoring song song:
+React Monitoring UI -> NestJS API -> SigV4 sidecar (API ECS task) -> AMP Query API
 ```
 
-### Kết quả
-Người vận hành có thể phát hiện, tiếp nhận và theo dõi quá trình xử lý sự cố ngay trong React dashboard.
+### 5 bước triển khai
+
+#### Bước 1 — AMP Integration
+- Tái sử dụng AMP workspace và infrastructure Terraform hiện có.
+- Ingestion Gateway remote-write metrics vào AMP; NestJS query AMP qua các **SigV4 sidecar** trong ECS Fargate tasks tương ứng.
+- Kiểm tra luồng Alloy -> Gateway -> AMP và React -> NestJS -> AMP query hoạt động end-to-end.
+
+#### Bước 2 — AMP Alerting Infrastructure & Alert Rules
+- Terraform quản lý **AMP Rule Group Namespace**, **AMP Alertmanager Definition**, **SNS Standard Topic** và các IAM/SNS topic policy tối thiểu để AMP gửi notification.
+- Tạo bộ rule VM đầu tiên: `VMHighCPU`, `VMHighMemory`, `VMDiskUsageHigh`, `VMDisconnected`; **PromQL phải dựa vào metric/label thực tế đang gửi vào AMP**, không tự giả định metric chưa tồn tại.
+- Rule dùng `for` để tránh spike ngắn, nhãn `severity` (`warning`, `critical`), cùng `organization_id`, `vm_id`/resource labels mà Gateway đã gắn đáng tin cậy.
+- AMP Managed Alertmanager làm grouping/dedup/routing; ưu tiên SNS message dạng **JSON có cấu trúc** để NestJS xử lý.
+- Không cài thêm Alertmanager container; không làm SNS subscription/NestJS ingestion trong bước này.
+
+#### Bước 3 — SNS -> NestJS Alert Ingestion
+- NestJS có HTTPS endpoint nhận `SubscriptionConfirmation` và `Notification` từ SNS, thực hiện confirmation an toàn khi tạo subscription.
+- **Xác minh SNS signature và expected `TopicArn` trước khi tin payload**; xử lý message sai định dạng an toàn.
+- Chuyển SNS/AMP payload thành `CanonicalAlertEvent` với fingerprint, `FIRING`/`RESOLVED`, organization, VM/resource, severity, timestamps, labels và annotations; không để Alert business logic phụ thuộc cấu trúc AWS SNS.
+- Lưu `alerts` và `alert_events` trong PostgreSQL; xử lý retry/idempotency, không tạo duplicate alert hoặc history event cho cùng message/lifecycle.
+- Terraform tạo **SNS HTTPS subscription** tới endpoint NestJS hiện có; không thêm Lambda/SQS nếu chưa có nhu cầu.
+
+#### Bước 4 — Alert Operations (alert-centric)
+- Phân biệt **signal status** (`FIRING`, `RESOLVED`) và **workflow status** (`OPEN`, `ACKNOWLEDGED`); `RESOLVED` đến từ AMP, không phải nút người dùng đóng alert.
+- **Acknowledge** nghĩa là operator đã tiếp nhận alert: lưu `acknowledged_by`, `acknowledged_at` và event; không đồng nghĩa với silence AMP hoặc sửa alert rule.
+- Operator có thể thêm comment/note. Lưu lịch sử dạng append-only như `ALERT_FIRING`, `ACKNOWLEDGED`, `COMMENT_ADDED`, `ALERT_RESOLVED`.
+- Dùng severity `WARNING`/`CRITICAL` từ rule để hiển thị, lọc và ưu tiên xử lý; không làm severity editor ở giai đoạn này.
+- Áp dụng RBAC hiện có: `Viewer` chỉ đọc; `Operator`/`Admin` được acknowledge và comment. Tất cả truy vấn/thao tác được scope theo organization hiện tại.
+
+#### Bước 5 — React Alerting UI & End-to-End Validation
+- Sử dụng **React + PxlKit và hệ thống icon PxlKit**; giữ theme/design tokens/layout của ứng dụng. Không thêm UI library mới nếu PxlKit đã hỗ trợ.
+- **Header bell** hiển thị badge đếm các alert `FIRING + OPEN` thuộc organization hiện tại; click mở popover các alert cần xử lý và nút **View all alerts** tới `/alerts`.
+- Trang **`/alerts`** có tab **Firing** và **History**, search/filter theo severity, workflow status và VM/resource; click alert mở **drawer từ bên phải** phủ lên trang hiện tại, không làm mất filter/scroll context.
+- **Alert Detail Drawer** dùng chung từ bell hoặc danh sách: summary, severity, status, VM, started/resolved time, labels/annotations, **Acknowledge**, comments, event history và liên kết tới VM detail.
+- Trang **`/alert-rules`** chỉ **read-only**: danh sách rule AMP, PromQL, severity, `for`, labels, annotations và rule detail drawer (nếu NestJS có hoặc bổ sung được API đọc phù hợp). **Terraform là source of truth** cho rules; không tạo UI chỉnh sửa rules dễ bị `terraform apply` ghi đè.
+- Kiểm thử E2E với VM thật: điều kiện metric vượt ngưỡng -> AMP `FIRING` -> SNS -> PostgreSQL -> bell/list/drawer hiển thị -> operator acknowledge/comment -> AMP `RESOLVED` -> alert chuyển sang History và giữ nguyên lịch sử.
+
+### Alert data và hành vi cốt lõi
+
+```text
+Technical signal: FIRING  --------> RESOLVED (AMP quyết định)
+Workflow:        OPEN    --------> ACKNOWLEDGED (operator quyết định)
+```
+
+- Một alert có thể đang `FIRING + ACKNOWLEDGED`, hoặc đã `RESOLVED + ACKNOWLEDGED`.
+- **Acknowledge không làm dừng evaluation/notification của AMP** và không tự giải quyết metric bất thường; muốn silence notification cần thao tác Alertmanager riêng, ngoài scope UI này.
+- `alerts` chứa trạng thái hiện tại, liên kết `organization_id`/VM/resource và fingerprint; `alert_events` lưu lịch sử thay đổi và comment. Metrics time-series tiếp tục được lưu ở **AWS AMP**, không ghi lịch sử CPU/RAM/Disk vào PostgreSQL.
+- Không tự động tạo một record nghiệp vụ mới mỗi lần AMP/SNS gửi lại notification; phải xử lý idempotent và phân biệt các lần phát cảnh báo sau khi đã resolved.
+
+### Ngoài phạm vi Phase 3
+- **Không xây** `incidents`, `incident_alerts`, incident assignment, incident timeline, incident resolve/close hoặc postmortem.
+- Không làm AI correlation/Jev, runbook automation, escalation workflow phức tạp hay full alert-rule editor trong React.
+- Incident Management chỉ được cân nhắc ở giai đoạn sau hoặc qua tích hợp công cụ chuyên dụng khi thật sự cần; Phase 7 có thể mở rộng correlation/incident trên nền tảng Alert hiện có.
+
+### Kết quả / Definition of Done
+
+- AMP nhận và query được metrics; PromQL alert rules hoạt động, có `FIRING`/`RESOLVED`.
+- AMP Managed Alertmanager gửi notification qua SNS; NestJS xác minh, chuẩn hóa và lưu alert không duplicate.
+- Operator thấy alert theo organization, severity và resource; acknowledge, thêm comment và xem history trên React.
+- Header bell, Alert List, Alert Detail Drawer và Alert Rules read-only hoạt động với dữ liệu/API thực.
+- Luồng **metric bất thường -> rule -> AMP Alertmanager -> SNS -> NestJS -> PostgreSQL -> React -> acknowledge/comment -> resolved/history** được kiểm chứng end-to-end.
+
+**Milestone Phase 3:** **Operational Alerting MVP = VM Monitoring + AMP Alerts + Alert Operations** (chưa bao gồm Incident Management).
 
 ---
 
@@ -410,7 +514,7 @@ Platform có khả năng mở rộng cho nhiều tổ chức, nhiều tài kho�
 | Mốc | Phạm vi | Kết quả |
 |---|---|---|
 | **MVP** | Phase 0 → 2 | VM monitoring chạy thật trên React |
-| **Operational MVP** | Phase 0 → 3 | Monitoring + alerts + incidents |
+| **Operational Alerting MVP** | Phase 0 → 3 | VM monitoring + AMP alert rules/notification + acknowledge/comments/history (chưa Incident Management) |
 | **Observability Platform** | Phase 0 → 4 | Metrics + logs + traces |
 | **VNPT Core Target** | Phase 0 → 5 | Server + Cloud + Data Center Monitoring |
 | **Advanced Platform** | Phase 0 → 6 | Automation + runbooks |
@@ -425,4 +529,4 @@ Platform có khả năng mở rộng cho nhiều tổ chức, nhiều tài kho�
 - NestJS là control plane; frontend không truy cập trực tiếp dữ liệu nhạy cảm hay query observability backend tùy ý.
 - Thiết kế tenant-aware từ đầu nhưng trì hoãn full multi-tenant cho đến khi core monitoring ổn định.
 - Automation mặc định có human approval.
-- Chỉ thêm Jev khi hệ thống đã có đủ metrics, alerts và incident context.
+- Chỉ thêm Jev khi hệ thống đã có metrics và alert context ổn định; bổ sung incident/correlation khi thực sự cần ở giai đoạn sau.

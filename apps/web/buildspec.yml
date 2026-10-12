@@ -1,0 +1,33 @@
+version: 0.2
+
+env:
+  shell: bash
+
+# Native webhook permits only PUSH on refs/heads/main. Merge-only publication
+# additionally requires repository governance that prohibits direct main pushes.
+# Runtime checks are defense in depth, not an authorization boundary.
+# Project supplies exact hosting target and public API origin; NO_ARTIFACTS.
+# No source/env archive, PR deployment, CodePipeline or Terraform execution.
+phases:
+  install:
+    runtime-versions:
+      nodejs: 24
+    commands:
+      - node "$CODEBUILD_SRC_DIR/apps/web/scripts/codebuild-web.mjs" guard
+      - cd "$CODEBUILD_SRC_DIR"
+      - node --version
+      - npm install --global pnpm@11.24.0
+      - node --test apps/web/scripts/tests/codebuild-web.test.mjs
+      - pnpm --dir apps/web install --frozen-lockfile
+  build:
+    commands:
+      - pnpm --dir apps/web lint
+      # Public origin stays on the build; legacy relative unit fixtures use a
+      # child-only cleared value. Origin tests explicitly exercise absolute mode.
+      - NODE_ENV=test VITE_API_URL= pnpm --dir apps/web test
+      - pnpm --dir apps/web build
+  post_build:
+    commands:
+      # CodeBuild runs post_build after a build failure, too. The publisher
+      # requires CODEBUILD_BUILD_SUCCEEDING=1 before issuing any AWS command.
+      - node apps/web/scripts/codebuild-web.mjs publish

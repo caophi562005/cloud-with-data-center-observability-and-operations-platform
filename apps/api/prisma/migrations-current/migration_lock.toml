@@ -1,0 +1,3 @@
+# Current domain baseline reconciled against the observed shared database.
+# Legacy deleted migrations remain untouched; never replay this baseline on an existing database.
+provider = "postgresql"

@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { ExecutionContext } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { SKIP_CSRF_KEY } from '../decorators/skip-csrf.decorator.js';
 import { CsrfOriginGuard } from './csrf-origin.guard.js';
 
 type RequestLike = {
@@ -9,9 +10,14 @@ type RequestLike = {
   headers: Record<string, string | undefined>;
 };
 
-function contextFor(request: RequestLike): ExecutionContext {
+function contextFor(
+  request: RequestLike,
+  handler?: () => unknown,
+): ExecutionContext {
   return {
     switchToHttp: () => ({ getRequest: () => request }),
+    getHandler: () => handler,
+    getClass: () => undefined,
   } as unknown as ExecutionContext;
 }
 
@@ -45,6 +51,16 @@ describe('CsrfOriginGuard', () => {
     expect(() => guard.canActivate(contextFor(request))).toThrow(
       ForbiddenException,
     );
+  });
+
+  it('allows an explicitly skipped production route without an origin', () => {
+    const guard = new CsrfOriginGuard(configFor('production'));
+    const handler = () => undefined;
+    Reflect.defineMetadata(SKIP_CSRF_KEY, true, handler);
+
+    expect(
+      guard.canActivate(contextFor({ method: 'POST', headers: {} }, handler)),
+    ).toBe(true);
   });
 
   it('allows the configured localhost origin during development', () => {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CacheService } from '../../infrastructure/cache/cache.service.js';
 import { MembershipsRepository } from '../memberships/memberships.repository.js';
 import { AuthorizationService } from './authorization.service.js';
+import { permissions } from './permissions.js';
 import { rolePermissions } from './role-permissions.js';
 
 type CacheMock = {
@@ -29,6 +30,22 @@ function createMembershipRepositoryMock(): MembershipRepositoryMock {
 }
 
 describe('rolePermissions', () => {
+  it('defines the exact VM permission literals', () => {
+    expect(permissions).toEqual([
+      'profile.read',
+      'organization.read',
+      'organization.update',
+      'member.read',
+      'member.manage',
+      'vm.read',
+      'vm.manage',
+      'vm.enroll',
+      'vm.agent.revoke',
+      'alert.read',
+      'alert.manage',
+    ]);
+  });
+
   it('defines the approved permission matrix exactly', () => {
     expect(rolePermissions.ADMIN).toEqual(
       expect.arrayContaining([
@@ -37,18 +54,32 @@ describe('rolePermissions', () => {
         'organization.update',
         'member.read',
         'member.manage',
+        'vm.read',
+        'vm.manage',
+        'vm.enroll',
+        'vm.agent.revoke',
+        'alert.read',
+        'alert.manage',
       ]),
     );
-    expect(rolePermissions.ADMIN).toHaveLength(5);
+    expect(rolePermissions.ADMIN).toHaveLength(11);
     expect(rolePermissions.OPERATOR).toEqual([
       'profile.read',
       'organization.read',
       'member.read',
+      'vm.read',
+      'vm.manage',
+      'vm.enroll',
+      'vm.agent.revoke',
+      'alert.read',
+      'alert.manage',
     ]);
     expect(rolePermissions.VIEWER).toEqual([
       'profile.read',
       'organization.read',
       'member.read',
+      'vm.read',
+      'alert.read',
     ]);
   });
 });

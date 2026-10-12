@@ -18,6 +18,39 @@ variable "site_name" {
   }
 }
 
+variable "installer_redirect" {
+  description = "Optional installer hostname and existing issued ACM certificate in us-east-1; the normal CloudFront hostname continues serving the SPA."
+  type = object({
+    hostname        = string
+    certificate_arn = string
+  })
+  default = null
+
+  validation {
+    condition = var.installer_redirect == null ? true : (
+      can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", var.installer_redirect.hostname)) &&
+      length(var.installer_redirect.hostname) <= 253 &&
+      can(regex("^arn:aws:acm:us-east-1:[0-9]{12}:certificate/[0-9a-f-]{36}$", var.installer_redirect.certificate_arn))
+    )
+    error_message = "Installer redirects require a lowercase hostname and an existing us-east-1 ACM certificate ARN."
+  }
+}
+
+variable "frontend_hostname" {
+  description = "Optional SPA alias covered by the existing installer certificate; does not change installer routing."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.frontend_hostname == null ? true : (
+      length(var.frontend_hostname) <= 253 &&
+      can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", var.frontend_hostname)) &&
+      (var.installer_redirect == null ? false : var.frontend_hostname != var.installer_redirect.hostname)
+    )
+    error_message = "frontend_hostname requires a distinct lowercase hostname and an existing installer certificate covering both aliases."
+  }
+}
+
 variable "tags" {
   description = "Non-secret resource tags."
   type        = map(string)

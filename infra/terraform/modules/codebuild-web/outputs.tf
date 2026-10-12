@@ -27,16 +27,11 @@ output "distribution_id" {
 }
 
 output "webhook_url" {
-  description = "URL of the sole PR webhook."
-  value       = module.codebuild.webhook_urls["pr"]
+  description = "URL of the sole main PUSH webhook."
+  value       = module.codebuild.webhook_urls["main"]
 }
 
 output "webhook_payload_url" {
-  description = "CodeBuild endpoint receiving PR events; not the sensitive webhook secret."
-  value       = module.codebuild.webhook_payload_urls["pr"]
-}
-
-output "pull_request_build_policy" {
-  description = "Native policy supplied to the sole PR webhook; buildspec cannot override it."
-  value       = local.approval_policy
+  description = "CodeBuild endpoint receiving main PUSH events; not the sensitive webhook secret."
+  value       = module.codebuild.webhook_payload_urls["main"]
 }

@@ -8,6 +8,11 @@ import {
 import { ApiError } from "../../../lib/api/api-error";
 import { queryKeys } from "../../../lib/query/query-keys";
 import {
+  endClientSession,
+  sessionCacheEpoch,
+} from "../../../lib/query/session-cache";
+import { resumeSessionRequests } from "../../../lib/api/http-client";
+import {
   confirmRegistration,
   login,
   logout,
@@ -27,17 +32,45 @@ import type {
 export function useMe(): UseQueryResult<MeResponse, ApiError> {
   return useQuery<MeResponse, ApiError>({
     queryKey: queryKeys.me,
-    queryFn: me,
+    queryFn: ({ signal }) => me(signal),
+    enabled: (query) =>
+      !(
+        query.state.error instanceof ApiError &&
+        query.state.error.statusCode === 401
+      ),
+    retryOnMount: false,
+    refetchOnWindowFocus: (query) =>
+      !(
+        query.state.error instanceof ApiError &&
+        query.state.error.statusCode === 401
+      ),
+    refetchOnReconnect: (query) =>
+      !(
+        query.state.error instanceof ApiError &&
+        query.state.error.statusCode === 401
+      ),
   });
 }
 
-export function useLogin(): UseMutationResult<SafeUser, ApiError, LoginInput> {
+export function useLogin(): UseMutationResult<
+  SafeUser,
+  ApiError,
+  LoginInput,
+  { epoch: number }
+> {
   const queryClient = useQueryClient();
 
-  return useMutation<SafeUser, ApiError, LoginInput>({
+  return useMutation<SafeUser, ApiError, LoginInput, { epoch: number }>({
+    networkMode: "always",
+    onMutate: () => {
+      endClientSession(queryClient);
+      return { epoch: sessionCacheEpoch(queryClient) };
+    },
     mutationFn: login,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.me });
+    onSuccess: async (_data, _variables, context) => {
+      if (context?.epoch !== sessionCacheEpoch(queryClient)) return;
+      resumeSessionRequests();
+      await queryClient.resetQueries({ queryKey: queryKeys.me, exact: true });
     },
   });
 }
@@ -76,9 +109,8 @@ export function useLogout(): UseMutationResult<void, ApiError, void> {
   const queryClient = useQueryClient();
 
   return useMutation<void, ApiError, void>({
+    networkMode: "always",
+    onMutate: () => endClientSession(queryClient),
     mutationFn: logout,
-    onSettled: () => {
-      queryClient.removeQueries({ queryKey: queryKeys.me });
-    },
   });
 }

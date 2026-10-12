@@ -5,6 +5,7 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SKIP_CSRF_KEY } from '../decorators/skip-csrf.decorator.js';
 import type { RequestContext } from '../types/request-context.type.js';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -26,6 +27,10 @@ export class CsrfOriginGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestContext>();
     const method = request.method.toUpperCase();
+
+    if (isCsrfSkipped(context)) {
+      return true;
+    }
 
     if (!UNSAFE_METHODS.has(method) || this.nodeEnv !== 'production') {
       return true;
@@ -64,4 +69,15 @@ function toOrigin(value: string): string {
   } catch {
     return '';
   }
+}
+
+function isCsrfSkipped(context: ExecutionContext): boolean {
+  const handler =
+    typeof context.getHandler === 'function' ? context.getHandler() : undefined;
+  const controller =
+    typeof context.getClass === 'function' ? context.getClass() : undefined;
+  return Boolean(
+    (handler && Reflect.getMetadata(SKIP_CSRF_KEY, handler)) ||
+    (controller && Reflect.getMetadata(SKIP_CSRF_KEY, controller)),
+  );
 }

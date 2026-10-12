@@ -17,6 +17,7 @@ import type { Member, MembershipCreateInput, Role } from "../../../types/domain"
 
 export function useOrganizationMembers(
   organizationId: string | null,
+  staleTime?: number,
 ): UseQueryResult<Member[], ApiError> {
   const queryKey = queryKeys.members(organizationId ?? "");
 
@@ -24,6 +25,7 @@ export function useOrganizationMembers(
     queryKey,
     queryFn: () => getOrganizationMembers(organizationId ?? ""),
     enabled: Boolean(organizationId),
+    ...(staleTime === undefined ? {} : { staleTime }),
   });
 }
 

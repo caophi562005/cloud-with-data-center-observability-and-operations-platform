@@ -17,7 +17,10 @@ function formatRole(role: Role): string {
   }
 }
 
-function getDisplayName(displayName: string | null | undefined, email: string | undefined) {
+function getDisplayName(
+  displayName: string | null | undefined,
+  email: string | undefined,
+) {
   return displayName?.trim() || email || "Account";
 }
 
@@ -56,7 +59,9 @@ export function UserMenu(): JSX.Element {
             <strong className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
               {meQuery.isPending ? "Loading account..." : displayName}
             </strong>
-            <small className="text-[0.6875rem] leading-[1.25] text-retro-muted">{roleLabel}</small>
+            <small className="text-[0.6875rem] leading-[1.25] text-retro-muted">
+              {roleLabel}
+            </small>
           </span>
         </span>
       </PixelDropdown.Trigger>
@@ -67,14 +72,19 @@ export function UserMenu(): JSX.Element {
             {user?.email ?? "Account details unavailable"}
           </span>
         </PixelDropdown.Header>
-        <PixelDropdown.Item value="profile" icon={<PxlKitIcon name="user" />}>
-          Profile
+        <PixelDropdown.Item
+          value="profile"
+          disabled
+          icon={<PxlKitIcon name="user" />}
+        >
+          Profile — unavailable
         </PixelDropdown.Item>
         <PixelDropdown.Item
           value="account-settings"
+          disabled
           icon={<PxlKitIcon name="settings" />}
         >
-          Account settings
+          Account settings — unavailable
         </PixelDropdown.Item>
         <PixelDropdown.Separator />
         <PixelDropdown.Item

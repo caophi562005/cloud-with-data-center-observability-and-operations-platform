@@ -128,6 +128,28 @@ function requestWithCookies(cookies: Record<string, string>): Request {
   return { cookies } as unknown as Request;
 }
 
+function expectNoCookieChanges(mocks: ServiceMocks): void {
+  expect(mocks.cookies.clearAuthCookies).not.toHaveBeenCalled();
+  expect(mocks.cookies.setAccessToken).not.toHaveBeenCalled();
+  expect(mocks.cookies.setRefreshToken).not.toHaveBeenCalled();
+  expect(mocks.cookies.setCognitoUsername).not.toHaveBeenCalled();
+}
+
+function refreshRequest(): Request {
+  return requestWithCookies({
+    refresh_token: 'refresh-token',
+    cognito_username: 'cognito-sub-1',
+  });
+}
+
+const refreshUnavailable = {
+  status: 503,
+  response: {
+    code: 'AUTH_REFRESH_UNAVAILABLE',
+    message: 'We could not renew your session. Please try again.',
+  },
+};
+
 describe('AuthService', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -245,7 +267,7 @@ describe('AuthService', () => {
     );
     expect(mocks.cookies.setCognitoUsername).toHaveBeenCalledWith(
       response,
-      'person@example.com',
+      'cognito-sub-1',
     );
 
     const serialized = JSON.stringify(
@@ -292,10 +314,9 @@ describe('AuthService', () => {
       email: verifiedEmail,
       displayName: 'Person',
     });
-    expect(mocks.organizations.provisionPersonalOrganization).toHaveBeenCalledWith(
-      'user-1',
-      verifiedEmail,
-    );
+    expect(
+      mocks.organizations.provisionPersonalOrganization,
+    ).toHaveBeenCalledWith('user-1', verifiedEmail);
   });
 
   it('does not set the internal username cookie for a public client', async () => {
@@ -353,6 +374,40 @@ describe('AuthService', () => {
     expect(mocks.users.upsertFromCognito).not.toHaveBeenCalled();
     expect(mocks.cookies.setAccessToken).not.toHaveBeenCalled();
   });
+
+  it.each(['', undefined])(
+    'rejects login with unusable verified subjects %s before cookies or local synchronization',
+    async (sub) => {
+      const mocks = createMocks();
+      const service = createService(mocks);
+      mocks.cognito.signInWithPassword.mockResolvedValue({
+        accessToken: 'access-token',
+        idToken: 'id-token',
+        refreshToken: 'refresh-token',
+      });
+      mocks.verifier.verifyAccessToken.mockResolvedValue({
+        ...accessClaims,
+        sub,
+      });
+      mocks.verifier.verifyIdToken.mockResolvedValue({ ...idClaims, sub });
+      mocks.users.upsertFromCognito.mockResolvedValue(localUser);
+
+      await expect(
+        service.login(
+          { email: 'person@example.com', password: 'password' },
+          response,
+        ),
+      ).rejects.toMatchObject({
+        status: 401,
+        response: {
+          code: 'AUTH_UNAUTHORIZED',
+          message: 'Authentication required',
+        },
+      });
+      expect(mocks.users.upsertFromCognito).not.toHaveBeenCalled();
+      expectNoCookieChanges(mocks);
+    },
+  );
 
   it('propagates Cognito invalid-credentials errors without synchronizing a user', async () => {
     const mocks = createMocks();
@@ -561,7 +616,7 @@ describe('AuthService', () => {
       service.refresh(
         requestWithCookies({
           refresh_token: 'refresh-token',
-          cognito_username: 'person@example.com',
+          cognito_username: 'cognito-sub-1',
         }),
         response,
       ),
@@ -575,7 +630,7 @@ describe('AuthService', () => {
 
     expect(mocks.cognito.refreshToken).toHaveBeenCalledWith(
       'refresh-token',
-      'person@example.com',
+      'cognito-sub-1',
     );
     expect(mocks.verifier.verifyAccessToken).toHaveBeenCalledWith(
       'new-access-token',
@@ -587,6 +642,10 @@ describe('AuthService', () => {
     expect(mocks.cookies.setRefreshToken).toHaveBeenCalledWith(
       response,
       'new-refresh-token',
+    );
+    expect(mocks.cookies.setCognitoUsername).toHaveBeenCalledWith(
+      response,
+      'cognito-sub-1',
     );
   });
 
@@ -628,7 +687,7 @@ describe('AuthService', () => {
     expect(mocks.cognito.refreshToken).toHaveBeenCalledWith('refresh');
   });
 
-  it('clears cookies when the refreshed access token cannot be verified', async () => {
+  it('preserves cookies and returns sanitized 503 when a fresh access token cannot be verified', async () => {
     const mocks = createMocks();
     const service = createService(mocks);
     mocks.cognito.refreshToken.mockResolvedValue({
@@ -642,13 +701,18 @@ describe('AuthService', () => {
       service.refresh(
         requestWithCookies({
           refresh_token: 'refresh-token',
-          cognito_username: 'person@example.com',
+          cognito_username: 'cognito-sub-1',
         }),
         response,
       ),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(mocks.cookies.clearAuthCookies).toHaveBeenCalledWith(response);
-    expect(mocks.cookies.setAccessToken).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({
+      status: 503,
+      response: {
+        code: 'AUTH_REFRESH_UNAVAILABLE',
+        message: 'We could not renew your session. Please try again.',
+      },
+    });
+    expectNoCookieChanges(mocks);
   });
 
   it('clears cookies when the refreshed access token has no local user', async () => {
@@ -664,7 +728,7 @@ describe('AuthService', () => {
       service.refresh(
         requestWithCookies({
           refresh_token: 'refresh-token',
-          cognito_username: 'person@example.com',
+          cognito_username: 'cognito-sub-1',
         }),
         response,
       ),
@@ -695,6 +759,234 @@ describe('AuthService', () => {
     });
     expect(mocks.cognito.refreshToken).not.toHaveBeenCalled();
     expect(mocks.cookies.clearAuthCookies).toHaveBeenCalledWith(response);
+  });
+
+  it.each([undefined, 'expired-access-token'])(
+    'refreshes with access cookie %s without extending nonrotating refresh/sub deadlines',
+    async (accessToken) => {
+      const mocks = createMocks();
+      const service = createService(mocks);
+      mocks.cognito.refreshToken.mockResolvedValue({
+        accessToken: 'new-access-token',
+      });
+      mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+      mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+      await expect(
+        service.refresh(
+          requestWithCookies({
+            refresh_token: 'refresh-token',
+            cognito_username: 'cognito-sub-1',
+            ...(accessToken ? { access_token: accessToken } : {}),
+          }),
+          response,
+        ),
+      ).resolves.toEqual({
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          displayName: 'Person',
+        },
+      });
+      expect(mocks.cookies.setAccessToken).toHaveBeenCalledWith(
+        response,
+        'new-access-token',
+      );
+      expect(mocks.cookies.setRefreshToken).not.toHaveBeenCalled();
+      expect(mocks.cookies.setCognitoUsername).not.toHaveBeenCalled();
+      expect(mocks.cookies.clearAuthCookies).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not extend refresh/sub deadlines when the provider echoes the original refresh token', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+      refreshToken: 'refresh-token',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+    await service.refresh(refreshRequest(), response);
+    expect(mocks.cookies.setAccessToken).toHaveBeenCalledWith(
+      response,
+      'new-access-token',
+    );
+    expect(mocks.cookies.setRefreshToken).not.toHaveBeenCalled();
+    expect(mocks.cookies.setCognitoUsername).not.toHaveBeenCalled();
+  });
+
+  it('clears cookies only for a sanitized permanent rejection at the Cognito boundary', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockRejectedValue(
+      new UnauthorizedException('raw provider token=secret'),
+    );
+
+    await expect(
+      service.refresh(refreshRequest(), response),
+    ).rejects.toMatchObject({
+      status: 401,
+      response: {
+        code: 'AUTH_UNAUTHORIZED',
+        message: 'Authentication required',
+      },
+    });
+    expect(mocks.cookies.clearAuthCookies).toHaveBeenCalledWith(response);
+    expect(mocks.cookies.setAccessToken).not.toHaveBeenCalled();
+    expect(mocks.cookies.setRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new Error('network token=secret'),
+    { name: 'TooManyRequestsException', message: 'raw provider secret' },
+    { name: 'InternalErrorException', $metadata: { httpStatusCode: 500 } },
+    { name: 'InvalidParameterException', message: 'misconfigured secret' },
+  ])(
+    'preserves cookies for retryable/unknown Cognito failures %#',
+    async (failure) => {
+      const mocks = createMocks();
+      const service = createService(mocks);
+      mocks.cognito.refreshToken.mockRejectedValue(failure);
+
+      await expect(
+        service.refresh(refreshRequest(), response),
+      ).rejects.toMatchObject(refreshUnavailable);
+      expectNoCookieChanges(mocks);
+    },
+  );
+
+  it.each([
+    undefined,
+    {},
+    { accessToken: '' },
+    { accessToken: 123 },
+    { accessToken: 'new-access-token', refreshToken: '' },
+  ])(
+    'fails closed without cookie changes for malformed fresh authentication %#',
+    async (authentication) => {
+      const mocks = createMocks();
+      const service = createService(mocks);
+      mocks.cognito.refreshToken.mockResolvedValue(authentication);
+      mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+      mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+      await expect(
+        service.refresh(refreshRequest(), response),
+      ).rejects.toMatchObject(refreshUnavailable);
+      expectNoCookieChanges(mocks);
+    },
+  );
+
+  it('preserves cookies when local user lookup is unavailable', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+      refreshToken: 'rotated-refresh',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    mocks.users.findByCognitoSub.mockRejectedValue(
+      new Error('DB credentials=secret'),
+    );
+
+    await expect(
+      service.refresh(refreshRequest(), response),
+    ).rejects.toMatchObject(refreshUnavailable);
+    expectNoCookieChanges(mocks);
+  });
+
+  it('verifies an optional fresh ID token before publishing access cookies', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+      idToken: 'new-id-token',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    mocks.verifier.verifyIdToken.mockRejectedValue(
+      new UnauthorizedException('JWKS unavailable secret'),
+    );
+    mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+    await expect(
+      service.refresh(refreshRequest(), response),
+    ).rejects.toMatchObject(refreshUnavailable);
+    expectNoCookieChanges(mocks);
+  });
+
+  it('rejects mismatching verified fresh access/ID subjects without clearing the original session', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+      idToken: 'new-id-token',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    mocks.verifier.verifyIdToken.mockResolvedValue({
+      ...idClaims,
+      sub: 'different-sub',
+    });
+    mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+    await expect(
+      service.refresh(refreshRequest(), response),
+    ).rejects.toMatchObject(refreshUnavailable);
+    expectNoCookieChanges(mocks);
+  });
+
+  it('rejects a fresh subject inconsistent with the stored refresh subject without cookie changes', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue({
+      ...accessClaims,
+      sub: 'different-sub',
+    });
+    mocks.users.findByCognitoSub.mockResolvedValue(localUser);
+
+    await expect(
+      service.refresh(refreshRequest(), response),
+    ).rejects.toMatchObject(refreshUnavailable);
+    expectNoCookieChanges(mocks);
+  });
+
+  it('does not publish any fresh cookie until local user lookup has completed', async () => {
+    const mocks = createMocks();
+    const service = createService(mocks);
+    mocks.cognito.refreshToken.mockResolvedValue({
+      accessToken: 'new-access-token',
+      refreshToken: 'rotated-refresh',
+    });
+    mocks.verifier.verifyAccessToken.mockResolvedValue(accessClaims);
+    let completeLookup!: (value: typeof localUser) => void;
+    let lookupStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
+    mocks.users.findByCognitoSub.mockImplementation(() => {
+      lookupStarted();
+      return new Promise<typeof localUser>((resolve) => {
+        completeLookup = resolve;
+      });
+    });
+
+    const refreshing = service.refresh(refreshRequest(), response);
+    await started;
+    expectNoCookieChanges(mocks);
+    completeLookup(localUser);
+    await refreshing;
+    expect(mocks.cookies.setAccessToken).toHaveBeenCalledWith(
+      response,
+      'new-access-token',
+    );
+    expect(mocks.cookies.setRefreshToken).toHaveBeenCalledWith(
+      response,
+      'rotated-refresh',
+    );
   });
 
   it('always clears cookies when logout revocation fails', async () => {

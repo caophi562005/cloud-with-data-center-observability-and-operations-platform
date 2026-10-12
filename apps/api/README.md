@@ -1,29 +1,8 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
-
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+# OpsGrid API
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+OpsGrid's NestJS API manages Cognito authentication, organization-scoped authorization, VM inventory/enrollment and tenant-bound metrics queries. Production metrics use the portable backend contract below; deployment is managed separately through the project's ECS/Terraform configuration.
 
 ## Project setup
 
@@ -59,60 +38,130 @@ $ pnpm run test:cov
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The project builds an immutable API image from [Dockerfile](<Dockerfile>) and deploys it through [the DEV/TEST Terraform root](<../../infra/terraform/environments/dev/test/main.tf>). Review a fresh full plan before an authorized rollout. Build/test success alone is not deployment evidence; the `nest deploy` template command is not the project's validated deployment path.
 
 ## Observability
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+The API uses structured redacted logging and reads VM metrics through its portable Prometheus query client. It does not register NestJS Observe or claim its tracing, alerting or SLA features. See the backend configuration and security contract below.
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+## Framework reference
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+[NestJS documentation](https://docs.nestjs.com) describes the underlying framework, not additional services installed in this project.
 
-This project is already instrumented. Create a free account at [observe.nestjs.com](https://observe.nestjs.com), add an application, and paste the generated app key and secret into the `ObserveModule.forRoot()` call in `src/app.module.ts`.
+## Portable metrics backend (Phase 2)
 
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
+This section describes the project metrics contract. Start with the commented query example in [API environment example](<.env.example>). Gateway write and optional CLI query configuration are described in the [ingest README](<../ingest/README.md>).
 
-## Resources
+### Query configuration and authentication
 
-Check out a few resources that may come in handy when working with NestJS:
+Omit **all four** API query keys (`METRICS_QUERY_URL`, `METRICS_QUERY_AUTH_MODE`, `METRICS_USERNAME`, `METRICS_QUERY_TOKEN`) to disable metrics querying. Partial configuration is a startup validation error, not a silently disabled client. An empty query URL is invalid; do not copy the CLI's blank optional query keys into the API. A blank mode alone defaults to Basic and does not enable querying, but a nonblank mode or supplied credential requires a valid URL and the selected mode's required fields.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Both `METRICS_QUERY_AUTH_MODE` and Gateway `METRICS_WRITE_AUTH_MODE` accept `none`, `basic`, or `bearer`. Only modes are trimmed/lowercased; absent or whitespace-only mode means **Basic**, never none. Unsupported explicit modes fail validation.
 
-## Support
+| Selected mode | Required credentials for that direction | Outbound Authorization |
+| --- | --- | --- |
+| `none` | None; URL and explicit mode still required | No header; stale username/tokens are ignored and excluded from selected auth |
+| `basic` | `METRICS_USERNAME` and that direction's token | Basic username/token-as-password |
+| `bearer` | That direction's token; username ignored | Bearer token |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Query uses only `METRICS_QUERY_TOKEN`; write uses only `METRICS_WRITE_TOKEN`. Neither falls back to the other, and read/write modes are independent. Use read-scoped and write-scoped credentials respectively. The single shared `METRICS_USERNAME` means the optional CLI cannot represent two different Basic usernames at once; separately deployed API/Gateway processes can inject different usernames.
 
-## Stay in touch
+Basic usernames must be nonblank, without `:` or ASCII controls. The API trims its Basic username and rejects empty tokens, surrounding token whitespace and ASCII controls. Go preserves otherwise accepted Basic credential bytes (nonblank, no ASCII controls); it does not repair them. Bearer tokens must be nonblank printable ASCII without whitespace or controls. None validates neither stale credential; Bearer ignores stale usernames. Never log configuration, credential values/headers, complete upstream URLs, PromQL or raw upstream errors/bodies.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### URLs, transport and backend selection
 
-## License
+- `METRICS_QUERY_URL` is a Prometheus **base**, not an exact `/api/v1/query` endpoint. The API appends `/api/v1/query` or `/api/v1/query_range`, retaining base prefixes/escaped paths. The optional CLI alone also accepts an exact instant-query endpoint, including trailing slashes.
+- `METRICS_WRITE_URL` is the **exact** Remote Write receiver URL and is never rewritten. Existing Go write query strings are retained; API/CLI query URLs reject query strings. All metrics URLs reject embedded credentials and fragments.
+- Use HTTPS with certificate verification. Plain HTTP is allowed only for `localhost` or a literal loopback address such as `127.0.0.1` or `[::1]`; plaintext Docker DNS names and arbitrary hosts are not allowed. Never disable TLS verification to make a recipe work. Redirects are not followed on either direction.
+- Select a backend via URL/mode/credentials, then restart the process with the matching configuration. This is not hot reload. An older image does not gain these modes through environment changes; use an immutable compatible build and the appropriate deployment approval. The recipes below are configuration examples, not rollout evidence.
+- The backend or trusted reverse proxy must expose the Prometheus query API and accept Remote Write; a vanilla Prometheus deployment needs its Remote Write receiver enabled. A configured URL is not evidence of a working backend.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+API transport retains its 5,000 ms total deadline, 2,000,000-byte response ceiling, series/sample caps, success-only cache/singleflight and existing DTO/status contracts. Backend selection does not bypass tenant/active-agent authorization, trusted-label normalization, payload limits or rate limiting. Only already normalized Gateway bytes are forwarded unchanged; upstream 2xx is an accepted write, not proof of query visibility or tenant isolation.
+
+### Backend recipes — choose one, replace the previous selection
+
+All values are placeholders, not verified deployments. Each independent block shows API query keys plus Gateway write keys (also usable by the optional CLI). Inject only the appropriate direction into each service; do **not** combine recipes or add unused Basic credentials to a query-disabled API. None ignores leftover credentials, but clear unused secrets operationally.
+
+#### Grafana Cloud — Basic
+
+```dotenv
+METRICS_QUERY_URL=https://YOUR-GRAFANA-METRICS-HOST/api/prom
+METRICS_QUERY_AUTH_MODE=basic
+METRICS_WRITE_URL=https://YOUR-GRAFANA-METRICS-HOST/api/prom/push
+METRICS_WRITE_AUTH_MODE=basic
+METRICS_USERNAME=YOUR_METRICS_TENANT_ID
+METRICS_QUERY_TOKEN=YOUR_READ_ACCESS_POLICY_TOKEN
+METRICS_WRITE_TOKEN=YOUR_WRITE_ACCESS_POLICY_TOKEN
+```
+
+Existing complete configurations without either mode variable remain Basic.
+
+#### AMP — same-task localhost SigV4 proxy, application auth none
+
+```dotenv
+METRICS_QUERY_URL=http://127.0.0.1:8005/workspaces/ws-xxxxxxxx
+METRICS_QUERY_AUTH_MODE=none
+METRICS_WRITE_URL=http://127.0.0.1:8005/workspaces/ws-xxxxxxxx/api/v1/remote_write
+METRICS_WRITE_AUTH_MODE=none
+```
+
+No application username, token, AWS key, signing service or metrics region is required. The application sends unsigned localhost requests; only the proxy signs the HTTPS request to AMP. Direct unsigned requests to AMP do not become authorized through `none`. This recipe requires the deferred integration checklist below.
+
+#### HTTPS self-hosted — none
+
+```dotenv
+METRICS_QUERY_URL=https://prometheus.internal
+METRICS_QUERY_AUTH_MODE=none
+METRICS_WRITE_URL=https://prometheus.internal/api/v1/write
+METRICS_WRITE_AUTH_MODE=none
+```
+
+Use only an appropriately protected/trusted backend. None removes application Authorization; it does not replace network access control or tenancy checks.
+
+#### HTTPS self-hosted — Basic reverse proxy
+
+```dotenv
+METRICS_QUERY_URL=https://metrics.internal/prometheus
+METRICS_QUERY_AUTH_MODE=basic
+METRICS_WRITE_URL=https://metrics.internal/prometheus/api/v1/write
+METRICS_WRITE_AUTH_MODE=basic
+METRICS_USERNAME=YOUR_PROXY_USERNAME
+METRICS_QUERY_TOKEN=YOUR_PROXY_READ_PASSWORD
+METRICS_WRITE_TOKEN=YOUR_PROXY_WRITE_PASSWORD
+```
+
+The proxy must actually accept the configured username and independent passwords; do not assume a Grafana access-policy token works elsewhere.
+
+#### HTTPS self-hosted — Bearer reverse proxy
+
+```dotenv
+METRICS_QUERY_URL=https://metrics.internal/prometheus
+METRICS_QUERY_AUTH_MODE=bearer
+METRICS_WRITE_URL=https://metrics.internal/prometheus/api/v1/write
+METRICS_WRITE_AUTH_MODE=bearer
+METRICS_QUERY_TOKEN=YOUR_PROXY_READ_BEARER_TOKEN
+METRICS_WRITE_TOKEN=YOUR_PROXY_WRITE_BEARER_TOKEN
+```
+
+No username is required. Mixed write/query modes are also supported, with independent tokens.
+
+<a id="deferred-devtest-amp-sidecar-checklist"></a>
+
+### DEV/TEST AMP sidecar contract
+
+AMP wiring now exists in the [shared proxy module](<../../infra/terraform/modules/ecs-amp-proxy/main.tf>), [API module](<../../infra/terraform/modules/ecs-api/main.tf>) and [Gateway module](<../../infra/terraform/modules/ecs-ingest/main.tf>). The [dated Rules rollout receipt](<../../.superpowers/sdd/2026-10-11-alert-rules/backend-live-verified.json>) records a deployed configuration, not a fresh check performed by this documentation update. The following requirements remain applicable to later rollouts.
+
+- Colocate a loopback proxy in **each** API or Gateway Fargate task that calls AMP. Same-task containers share localhost; an API task cannot use a proxy in a separate Gateway task.
+- Fix the upstream to the actual AMP workspace host, region and signing service `aps`; for example host `aps-workspaces.ap-southeast-1.amazonaws.com`, region `ap-southeast-1`. Preserve `/workspaces/<id>/api/v1/...` paths and verified upstream HTTPS. No application-side Host override or AWS signing/credential discovery is added.
+- Use **TaskRole, not merely ExecutionRole**. Scope `aps:QueryMetrics` for query tasks and `aps:RemoteWrite` for write tasks to the intended workspace. The protected Rules API additionally needs `aps:ListRules` on that same workspace. Do not grant unrelated series/labels/metadata APIs. ECS temporary credentials are discovered/refreshed by the proxy only; no static keys in application config. IAM privileges are task-wide, not a sidecar-only security boundary.
+- Bind only to localhost, never an ALB/public ingress port. Keep TLS verification; disable verbose signing/failed-body logging and do not use unsigned-payload mode.
+- Keep the immutable proxy digest and source-verified arguments (`--port 127.0.0.1:8005`, `--host`, `--region`, `--name aps`, `--upstream-url-scheme https`). [Proxy research](<../../.superpowers/sdd/2026-10-08-amp-wiring/proxy-research.md>) records provenance and upstream limitations; it does not validate arbitrary future image substitutions.
+- Separately authorize and validate task lifecycle/startup/readiness, DNS/egress/networking, resource budgets, credential refresh and upstream failure/status propagation. Signing failure must not become a false write ACK. `START` dependency ordering alone is not readiness or recovery proof.
+
+Official references for continued verification: [AWS SigV4 Proxy](https://github.com/awslabs/aws-sigv4-proxy), [proxy flags source](https://github.com/awslabs/aws-sigv4-proxy/blob/master/cmd/aws-sigv4-proxy/main.go), [AMP APIs/signing](https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-compatible-APIs.html), [ECS Task Role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html), [Fargate networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html).
+
+### Evidence boundaries
+
+The recorded [API checkpoint](<../../.superpowers/sdd/2026-10-08-portable-metrics-backend/final-api-verification-checkpoint.md>) reports 596 unit tests across 50 files plus 11 VM metrics e2e tests passed; typecheck/build exited 0. Whole-API formatting **failed** on 80 unchanged baseline warnings and an unmatched Prisma glob; feature-scoped formatting passed. No broad unrelated formatting is implied.
+
+The [Go runtime checkpoint](<../../.superpowers/sdd/2026-10-08-portable-metrics-backend/final-go-runtime-checkpoint.md>) reports eight non-smoke packages with 77 top-level/394 subtest pass events (grouping events, not 471 independent cases). The [static checkpoint](<../../.superpowers/sdd/2026-10-08-portable-metrics-backend/final-go-static-checkpoint.md>) records all-package compile-only, vet and builds, not smoke passes. **All smoke/CLI/image bodies were NOT RUN; binaries were never executed.** The [Task6 review](<../../.superpowers/sdd/2026-10-08-portable-metrics-backend/task-6-review.md>) is static approval only. These are prior receipts, not checks rerun by this documentation task and not AWS/deployment verification. Manual documentation/source consistency replaces executable RED here; existing style execution is left to parent Task8.

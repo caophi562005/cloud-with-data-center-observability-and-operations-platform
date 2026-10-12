@@ -1,0 +1,75 @@
+groups:
+  - name: opsgrid-vm-health
+    interval: 60s
+    rules:
+      - alert: VMHighCPU
+        expr: |
+          max by (organization_id, vm_id) (
+            clamp_max(clamp_min(
+              100 * (1 - avg by (organization_id, vm_id, agent_id) (
+                rate(node_cpu_seconds_total{mode="idle",organization_id!="",vm_id!=""}[5m])
+              )), 0), 100)
+          ) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Linux VM CPU usage is above 80 percent
+          description: CPU busy usage has exceeded the threshold for five minutes.
+
+      - alert: VMHighMemory
+        expr: |
+          max by (organization_id, vm_id) (
+            100 * (1 -
+              node_memory_MemAvailable_bytes{organization_id!="",vm_id!=""}
+              / (node_memory_MemTotal_bytes{organization_id!="",vm_id!=""} > 0)
+            )
+          ) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Linux VM memory usage is above 85 percent
+          description: RAM usage has exceeded the threshold for ten minutes.
+
+      - alert: VMDiskUsageHigh
+        expr: |
+          max by (organization_id, vm_id) (
+            100 * (1 -
+              node_filesystem_avail_bytes{
+                organization_id!="",vm_id!="",
+                fstype!~"tmpfs|devtmpfs|proc|sysfs|overlay|squashfs|nsfs|tracefs|cgroup2?",
+                mountpoint!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+              }
+              / (node_filesystem_size_bytes{
+                organization_id!="",vm_id!="",
+                fstype!~"tmpfs|devtmpfs|proc|sysfs|overlay|squashfs|nsfs|tracefs|cgroup2?",
+                mountpoint!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+              } > 0)
+            )
+          ) > 85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Linux VM worst eligible filesystem usage is above 85 percent
+          description: Eligible filesystem usage has exceeded the threshold for fifteen minutes.
+
+      # Presence, not up==1: up=0 still reports collector telemetry.
+      # Missing identities are remembered for only 24h; expiry can resolve an
+      # alert without reconnection. Never-seen or DB lifecycle state is unknown.
+      - alert: VMDisconnected
+        expr: |
+          max by (organization_id, vm_id) (
+            max_over_time(up{organization_id!="",vm_id!=""}[24h])
+          )
+          unless on (organization_id, vm_id)
+          max by (organization_id, vm_id) (
+            max_over_time(up{organization_id!="",vm_id!=""}[5m])
+          )
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Previously observed VM telemetry is missing
+          description: No up sample in five minutes; condition persisted five more minutes. Resolution is not proof of host recovery.

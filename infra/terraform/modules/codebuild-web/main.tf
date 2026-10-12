@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  name             = "${var.project_name}-${var.environment}-web-pr"
+  name             = "${var.project_name}-${var.environment}-web-main"
   account_id       = data.aws_caller_identity.current.account_id
   repository_url   = "https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform.git"
   bucket_name      = var.web_bucket_name
@@ -12,16 +12,12 @@ locals {
   log_group_name   = "/aws/codebuild/${local.name}"
   log_group_arn    = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:${local.log_group_name}"
   buildspec_path   = "apps/web/buildspec.yml"
-  approval_policy = {
-    requires_comment_approval = "ALL_PULL_REQUESTS"
-    approver_roles            = ["GITHUB_ADMIN"]
-  }
   tags = merge(var.additional_tags, {
     Project   = var.project_name
     Env       = var.environment
     Layer     = "persistent"
     ManagedBy = "terraform"
-    Component = "web-pr-build"
+    Component = "web-main-deploy"
   })
 
   # Exact project ARN avoids a role/project dependency cycle without widening trust.
@@ -101,7 +97,7 @@ module "codebuild" {
   version = "1.0.0"
 
   name                   = local.name
-  description            = "Approved main-targeting PRs: test/build apps/web and publish the shared private dev site."
+  description            = "Main PUSH only: verify/build apps/web and publish the approved OpsGrid public site."
   service_role_arn       = module.build_role.arn
   source_version         = "refs/heads/main"
   build_timeout          = var.codebuild_build_timeout_minutes
@@ -118,7 +114,8 @@ module "codebuild" {
     privileged_mode = false
     environment_variable = [
       { name = "WEB_BUCKET", value = local.bucket_name },
-      { name = "CLOUDFRONT_DISTRIBUTION_ID", value = local.distribution_id }
+      { name = "CLOUDFRONT_DISTRIBUTION_ID", value = local.distribution_id },
+      { name = "VITE_API_URL", value = var.api_origin }
     ]
   }
   build_source = {
@@ -137,26 +134,24 @@ module "codebuild" {
     cloudwatch_logs = {
       status      = "ENABLED"
       group_name  = module.build_logs.cloudwatch_log_group_name
-      stream_name = "web-pr"
+      stream_name = "web-main"
     }
     s3_logs = { status = "DISABLED" }
   }
   # Account-scoped credential/report-group collections remain empty.
   webhooks = {
-    pr = {
+    main = {
       build_type = "BUILD"
-      # Filters within this sole group are ANDed. No PUSH/MERGED/CLOSED events.
+      # Sole group is ANDed. Direct main pushes also match if GitHub allows them.
       filter_groups = [{
         filters = [
           {
             type    = "EVENT"
-            pattern = "PULL_REQUEST_CREATED,PULL_REQUEST_UPDATED,PULL_REQUEST_REOPENED"
+            pattern = "PUSH"
           },
-          { type = "BASE_REF", pattern = "^refs/heads/main$" }
+          { type = "HEAD_REF", pattern = "^refs/heads/main$" }
         ]
       }]
-      # Native policy must remain mandatory, not substituted with buildspec checks.
-      pull_request_build_policy = local.approval_policy
     }
   }
 

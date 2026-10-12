@@ -4,7 +4,6 @@ import type {
   RequestOrganizationContext,
 } from '../types/request-context.type.js';
 
-export type OrganizationContext = RequestOrganizationContext;
 type OrganizationContextKey = keyof RequestOrganizationContext;
 type OrganizationContextValue =
   | RequestOrganizationContext

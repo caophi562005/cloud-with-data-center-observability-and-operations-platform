@@ -3,10 +3,15 @@
 region                = "ap-southeast-1"
 allowed_account_id    = "491333778094"
 api_name              = "opsgrid-dev-test-api"
-vpc_id                = "vpc-0ff8d16e80f7ca153"
-subnet_ids            = ["subnet-00b483ac36dfe8d7f", "subnet-02358cbff24af7145"]
+network_name          = "opsgrid-dev-test"
+vpc_cidr              = "10.42.0.0/16"
+availability_zones    = ["ap-southeast-1a", "ap-southeast-1b"]
+# This root creates/destroys its own VPC, two public subnets and IGW.
+# No existing/default VPC, NAT Gateway or private subnets are used.
+# API/ingest ALB+task security groups are isolated; the new default SG is closed.
 allowed_ingress_cidrs = ["0.0.0.0/0"]
-image_digest_uri      = "public.ecr.aws/h5u5b6t3/opsgrid-api@sha256:4a2c4bc8177b1016591cdbb0b7926bc0a4e50be268de1b63b801387cc63e7dc7"
+# Pin an existing registry manifest digest, not a local Docker image ID.
+image_digest_uri      = "public.ecr.aws/h5u5b6t3/opsgrid-api@sha256:a6d10448720da9f0a66b1f0d2d0d5cde383cf3840e8b0ce410c2f3b95df336c5"
 certificate_arn       = "arn:aws:acm:ap-southeast-1:491333778094:certificate/713188d7-a266-4804-962a-34e46f81bc42"
 hosted_zone_id        = "Z04903171FP3IXRU1BXRK"
 api_dns_name          = "api.opsgrid.hacmieu.com"
@@ -20,3 +25,44 @@ secret_value_version  = 1
 # Private runtime values belong in runtime.auto.tfvars.json (git-ignored).
 # Set runtime_secret_names there to the keys in runtime_secret_values.
 # Increment secret_value_version whenever a write-only runtime value changes.
+
+# Optional NEW AWS ECS ingest; the existing manual Azure app stays unmanaged.
+# Copy these nonsecret settings into ignored ingest.auto.tfvars.json.
+enable_ingest               = false
+ingest_name                 = "opsgrid-dev-test-ingest"
+ingest_dns_name             = "ingest.opsgrid.hacmieu.com"
+ingest_parameter_path       = "/opsgrid/dev/test/ingest"
+ingest_image_digest_uri     = "public.ecr.aws/h5u5b6t3/opsgrid-ingest@sha256:dc22fa1217ffa1c131f2c6a321d92e326db04c7e9c9aa0b9159bba76295ac960"
+ingest_certificate_arn      = null # Add your existing regional ACM ARN later.
+ingest_database_port        = 5432
+ingest_redis_port           = 11352 # Set from the actual ingest Redis URL.
+ingest_secret_value_version = 1
+
+# ALL ingest dotenv values go in ignored ingest-runtime.auto.tfvars.json,
+# under ingest_runtime_secret_values; names go in ingest_runtime_secret_names.
+# Gateway defaults (including PORT=8080) also become Standard SecureString.
+# Optional METRICS_QUERY_URL/TOKEN are stored for smoke use, not injected into ECS.
+# Values are ephemeral/write-only. Keep private inputs for plan/apply/destroy;
+# increment ingest_secret_value_version whenever a value changes to roll tasks.
+# Standard parameters use the AWS-managed SSM KMS key; no CMK is created.
+# HTTP is setup-only. Remote-write URL stays null until ACM enables HTTPS.
+# Never publish runtime inputs, .env, plans, terraform.tfstate or its backups.
+# A normal plan/apply/destroy covers BOTH AWS API and ECS ingest in this root.
+
+# AMP workspace is created separately by dev/persistent and survives test destroy.
+# Set the ACTUAL persistent output after workspace creation, never a placeholder ARN.
+# amp_workspace_arn = "arn:aws:aps:ap-southeast-1:491333778094:workspace/ws-<actual-uuid>"
+# AMP adds task-local signers, scoped Task Role permissions and nonsecret loopback
+# endpoints/mode=none. Legacy metrics values may remain in private SSM inputs, but
+# they are excluded from task injection and Execution Role access in AMP mode.
+# AMP CPU256: proxy64 + application192 CPU units. Configured app memory512 maps
+# task1024/app896/proxy128 MiB; app memory1024 maps task2048/app1920/proxy128 MiB.
+# These budgets preserve app headroom but increase Fargate memory cost.
+# No proxy ALB, SG ingress or ECS port mapping is added.
+# The image is pinned to upstream v1.13 linux/amd64; optional verified override:
+# amp_proxy_image_digest_uri = "public.ecr.aws/aws-observability/aws-sigv4-proxy@sha256:<verified-manifest>"
+# Container START is process ordering, not listener/backend readiness. Essential
+# proxy exit and the service circuit breaker handle failures; live verification
+# is deferred until an explicitly authorized deployment.
+# Application image digests above are not verified for AMP here. Deploy only
+# immutable API/ingest images built with portable metrics auth/loopback support.

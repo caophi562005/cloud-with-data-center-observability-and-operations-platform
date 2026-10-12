@@ -15,6 +15,16 @@ output "distribution_arn" {
   value = module.cloudfront.cloudfront_distribution_arn
 }
 
+output "distribution_domain_name" {
+  description = "CloudFront domain name for Route53 alias targets; independent of installer aliases."
+  value       = module.cloudfront.cloudfront_distribution_domain_name
+}
+
+output "distribution_hosted_zone_id" {
+  description = "CloudFront target zone ID, not the application's Route53 hosted zone ID."
+  value       = module.cloudfront.cloudfront_distribution_hosted_zone_id
+}
+
 output "https_url" {
   value = "https://${module.cloudfront.cloudfront_distribution_domain_name}"
 }
