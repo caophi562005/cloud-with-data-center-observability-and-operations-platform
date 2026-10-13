@@ -1,0 +1,73 @@
+.integration-detail { min-width: 0; color: var(--cloudops-text); font-family: inherit; }
+.integration-detail *, .integration-detail *::before, .integration-detail *::after { box-sizing: border-box; }
+.integration-stack { display: grid; min-width: 0; gap: 1rem; }
+.integration-detail h1 { font-family: var(--font-pixel); font-size: 1.7rem; line-height: 1.35; }
+.integration-detail h2 { font-family: var(--font-pixel); font-size: 1.15rem; }
+.integration-detail h3 { font-size: .9rem; font-weight: 600; }
+.integration-detail h4 { margin-top: 1rem; font-size: .85rem; font-weight: 600; }
+.integration-detail p, .integration-detail dd, .integration-detail dt { font-size: .8125rem; line-height: 1.55; overflow-wrap: anywhere; }
+.integration-detail dd { margin: 0; }
+.integration-muted, .integration-detail dt { color: var(--cloudops-muted); }
+.integration-back, .integration-metric-link { color: var(--cloudops-accent); text-decoration: underline; text-underline-offset: 3px; }
+.integration-back { width: fit-content; font-size: .875rem; }
+.integration-header { display: grid; min-width: 0; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(0, 23rem); align-items: start; }
+.integration-header > div { min-width: 0; }
+.integration-title-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.integration-target { color: var(--cloudops-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; }
+.integration-header-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+.integration-header-actions label { flex: 1; min-width: 0; }
+.integration-detail label { display: grid; min-width: 0; gap: .35rem; color: var(--cloudops-muted); font-size: .75rem; }
+.integration-detail select, .integration-detail input { display: block; min-width: 0; width: 100%; max-width: 100%; min-height: 2.5rem; padding: .45rem .5rem; background: var(--cloudops-surface); border: 1px solid var(--cloudops-border); border-radius: 0; font: inherit; color: var(--cloudops-text); }
+.integration-detail :is(button, a, summary, input, select, [tabindex]):focus-visible { outline: 2px solid var(--cloudops-accent); outline-offset: 3px; }
+.integration-detail summary { cursor: pointer; color: var(--cloudops-accent); font-size: .8rem; padding-block: .5rem; }
+.integration-signals { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-block: .75rem; border-block: 1px solid var(--cloudops-border); }
+.integration-controls { display: flex; flex-wrap: wrap; gap: 1rem; }
+.integration-controls label { flex: 0 1 20rem; }
+.integration-two-columns { display: grid; min-width: 0; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.integration-kpis { display: grid; min-width: 0; gap: .75rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.integration-card { min-width: 0; padding: 1rem; border: 1px solid var(--cloudops-border); background: var(--cloudops-surface); margin: 0; }
+.integration-card > :not(:first-child) { margin-top: .5rem; }
+.integration-kpi-value { font-size: 1.5rem !important; font-weight: 600; font-variant-numeric: tabular-nums; }
+.integration-kpi-value span { font-size: .8rem; color: var(--cloudops-muted); }
+.integration-definition-grid { display: grid; min-width: 0; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-block: .75rem; }
+.integration-definition-grid > div { min-width: 0; }
+.integration-notice { border-left: 3px solid var(--retro-gold); background: var(--cloudops-surface); padding: .75rem 1rem; }
+.integration-error { border-color: var(--retro-red); }
+.integration-filters { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); }
+.integration-table-scroll { max-width: 100%; max-height: 32rem; min-width: 0; overflow: auto; border: 1px solid var(--cloudops-border); }
+.integration-detail table { width: 100%; min-width: 42rem; text-align: left; font-size: .8125rem; border-collapse: collapse; background: var(--cloudops-surface); }
+.integration-detail caption { padding: .65rem; color: var(--cloudops-muted); text-align: left; font-size: .75rem; }
+.integration-detail th, .integration-detail td { padding: .7rem; vertical-align: top; border-bottom: 1px solid var(--cloudops-border); }
+.integration-detail thead th { color: var(--cloudops-muted); font-weight: 500; }
+.integration-detail tbody th { min-width: 13rem; font-weight: 500; }
+.integration-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.integration-entity-label { display: block; font-size: .75rem; margin-top: .25rem; }
+.integration-metric-link { text-align: left; padding: .15rem 0; background: transparent; border: 0; font: inherit; cursor: pointer; }
+.integration-metric-link[aria-pressed="true"] { font-weight: 700; }
+.integration-metric-link:disabled { color: var(--cloudops-muted); cursor: default; }
+.integration-chart { overflow: hidden; }
+.integration-chart-plot { display: grid; min-width: 0; grid-template-columns: max-content minmax(0, 1fr); column-gap: .5rem; }
+/* Match the 198-unit viewBox height so HTML tick offsets and SVG y coordinates agree. */
+.integration-chart-svg { display: block; width: 100%; min-width: 0; height: 198px; color: var(--cloudops-accent); }
+.integration-axis { color: var(--cloudops-muted); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.integration-chart-y-axis { display: grid; align-items: start; text-align: right; }
+.integration-chart-y-axis span { grid-area: 1 / 1; position: relative; transform: translateY(-50%); }
+/* Keep endpoint labels aligned with x=56 and x=630 in the 640-unit viewBox. */
+.integration-chart-x-axis { grid-column: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; padding-inline: 8.75% 1.5625%; }
+.integration-chart-x-axis span { min-width: 0; overflow-wrap: anywhere; }
+.integration-chart-x-axis span:last-child { text-align: right; }
+.integration-chart-gridline { stroke: var(--cloudops-border); stroke-width: 1; }
+.integration-chart-empty { display: grid; min-height: 10rem; align-content: center; text-align: center; }
+.integration-chart table { min-width: 25rem; }
+.integration-chart-latest { font-variant-numeric: tabular-nums; }
+.integration-tablist { max-width: 100%; min-width: 0; flex-wrap: wrap; }
+@media (max-width: 1100px) { .integration-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .integration-header, .integration-two-columns, .integration-signals, .integration-kpis, .integration-definition-grid, .integration-filters { grid-template-columns: minmax(0, 1fr); }
+  .integration-detail h1 { font-size: 1.35rem; }
+  .integration-header-actions { align-items: stretch; }
+  .integration-header-actions label { flex-basis: 100%; }
+  .integration-controls label { flex-basis: 100%; }
+  .integration-card { padding: .85rem; }
+}
+@media (prefers-reduced-motion: reduce) { .integration-detail *, .integration-detail *::before, .integration-detail *::after { animation: none !important; transition: none !important; } }

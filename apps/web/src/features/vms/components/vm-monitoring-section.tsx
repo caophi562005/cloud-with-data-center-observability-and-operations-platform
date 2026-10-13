@@ -1,13 +1,22 @@
-import { useState } from "react";
-import { PixelBadge, PixelButton } from "@pxlkit/ui-kit";
+import { useState, type ReactNode } from "react";
+import { PixelBadge, PixelButton, PixelTabs } from "@pxlkit/ui-kit";
+import { Link } from "react-router-dom";
+import { integrationDetailPath } from "../lib/integration-route";
 import { formatLocalDateTime, getBrowserTimeZone } from "../../../lib/date-time";
 import { useAgentStatus, useMonitoringCatalog, useVmMonitoringConfig } from "../hooks/use-monitoring";
 import { canManageAgent } from "../lib/agent-connect";
-import type { IntegrationInstance, SupportedAgentOs } from "../monitoring.types";
-import type { Vm } from "../vm.types";
+import type { IntegrationInstance, IntegrationObservation, SupportedAgentOs } from "../monitoring.types";
+import type { Vm, VmTelemetryMetadata } from "../vm.types";
 import { MonitoringSettingsModal } from "./monitoring-settings-modal";
+import { collectorLabel } from "../lib/collector-label";
+import { PublicValue, RelativeTime } from "./vm-detail-presentation";
 
-interface Props { organizationId: string; role: string | undefined; vm: Vm }
+interface Props {
+  organizationId: string; role: string | undefined; vm: Vm;
+  header: ReactNode; overview: ReactNode; inventory: ReactNode; agentActions: ReactNode;
+  telemetry: VmTelemetryMetadata; lastSeenAt: string | null; metricsUnavailable: boolean;
+  tab: string; onTabChange: (tab: string) => void;
+}
 const date = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? formatLocalDateTime(value) : "Not reported";
 function target(instance: IntegrationInstance): string {
   switch (instance.kind) {
@@ -17,12 +26,19 @@ function target(instance: IntegrationInstance): string {
     case "docker": return instance.settings.endpoint;
   }
 }
+function sampleLabel(instance: IntegrationInstance, observation: IntegrationObservation | undefined, unavailable: boolean): string {
+  if (!instance.enabled || observation?.state === "disabled" || observation?.availability === "disabled") return "Disabled";
+  if (unavailable || observation?.availability === "unavailable" || observation?.availability === "unsupported") return "Unavailable";
+  if (observation?.availability === "available" && observation.state === "observed") return "Fresh sample";
+  if (observation?.state === "stale") return "Stale";
+  return "No sample";
+}
 
-/** Scope-keyed lifetime also resets open state when tenant, VM, role or OS changes. */
+/** Scope-keyed lifetime resets the session only when tenant, VM, role or OS changes. */
 export function VmMonitoringSection(props: Props) {
   return <MonitoringSectionSession key={`${props.organizationId}:${props.vm.id}:${props.role ?? ""}:${props.vm.osType}`} {...props} />;
 }
-function MonitoringSectionSession({ organizationId, role, vm }: Props) {
+function MonitoringSectionSession({ organizationId, role, vm, header, overview, inventory, agentActions, telemetry, lastSeenAt, metricsUnavailable, tab, onTabChange }: Props) {
   const [editing, setEditing] = useState(false);
   const configQuery = useVmMonitoringConfig(organizationId, vm.id);
   const catalogQuery = useMonitoringCatalog(organizationId);
@@ -34,57 +50,80 @@ function MonitoringSectionSession({ organizationId, role, vm }: Props) {
   const os: SupportedAgentOs | null = vm.osType === "Linux" ? "linux" : vm.osType === "Windows" ? "windows" : null;
   const native = vm.collectorType === "TELEGRAF" && vm.telemetryCompatibility === "native";
   const managed = Boolean(native && os && config?.managed && config.definition && config.version !== null);
-  const editable = Boolean(managed && catalog && os && catalog.host.supportedOs.includes(os) && canManageAgent(role) && !denied);
+  const editable = Boolean(managed && catalog && os && catalog.host.supportedOs.includes(os) && canManageAgent(role) && !denied && catalogQuery.error?.statusCode !== 403 && catalogQuery.error?.statusCode !== 404);
   const readOnlyReason = !native
-    ? "Legacy or unknown collector: monitoring is read-only. Re-enroll a supported native Telegraf agent explicitly; no migration or empty default save is performed here."
+    ? "Legacy or unknown collector: monitoring is read-only. Explicitly re-enroll a supported native Telegraf agent; no automatic migration is performed."
     : !os ? "Unknown operating system: no native OS preset can be edited."
-      : config && !managed ? "No managed native definition is available. Empty defaults are not editable or saved."
-        : !canManageAgent(role) ? "Viewer / read-only access. Only Admin and Operator may save; the backend enforces vm.manage permission."
-          : catalog && os && !catalog.host.supportedOs.includes(os) ? "This OS is not supported by the native catalog." : null;
-
-  return <section aria-labelledby="vm-monitoring-heading" className="space-y-4 border-2 border-retro-border bg-retro-surface p-4 shadow-[3px_3px_0_var(--cloudops-shadow)]">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 id="vm-monitoring-heading" className="text-lg font-semibold text-retro-text">Monitoring settings</h2><p className="mt-1 text-sm text-retro-muted">Desired configuration, agent application and metric observations are separate signals.</p></div>
-      <PixelButton type="button" tone="cyan" disabled={!editable} onClick={() => setEditing(true)} title={readOnlyReason ?? (!catalog ? "Monitoring catalog is unavailable" : undefined)}>Edit monitoring settings</PixelButton>
-    </div>
-    {readOnlyReason ? <p className="text-sm text-retro-muted">{readOnlyReason}</p> : null}
+      : config && !managed ? "No managed native definition is available. Empty defaults cannot be saved."
+        : !canManageAgent(role) ? "Read-only access. Admin or Operator role is required to configure monitoring."
+          : catalog && !catalog.host.supportedOs.includes(os) ? "This OS is not supported by the native catalog."
+            : !config ? "Monitoring definition is not available yet." : !catalog ? "Monitoring catalog is not available yet." : null;
+  const instances = config?.definition?.integrations;
+  const configSummary = !status ? "Unknown" : status.configState === "applied" ? `Applied${status.appliedVersion === null ? "" : ` v${status.appliedVersion}`}`
+    : status.configState === "pending" ? `Pending${status.desiredVersion === null ? "" : ` v${status.desiredVersion}`}`
+      : status.configState === "rejected" ? `Rejected${status.rejectedVersion === null ? "" : ` v${status.rejectedVersion}`}` : "Unknown";
+  const delivery = metricsUnavailable ? "unknown" : telemetry.telemetryDelivery === "fresh" ? "fresh" : telemetry.telemetryDelivery === "stale" ? "stale" : "unknown";
+  const contact = status ? status.lastControlContactAt : telemetry.lastControlContactAt;
+  const configurationErrors = <>
     {configQuery.isPending ? <p role="status" className="text-sm text-retro-muted">Loading monitoring definition…</p> : null}
-    {configQuery.isError ? <div role="alert" className="flex flex-wrap items-center gap-3 border border-retro-red p-3 text-sm text-retro-text"><p>{configQuery.error.statusCode === 403 ? "Access denied to monitoring configuration (vm.read required)." : configQuery.error.statusCode === 404 ? "VM or monitoring definition not found." : "Monitoring configuration could not be refreshed. Any displayed definition is the last fetched snapshot."}</p><PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void configQuery.refetch()}>Retry definition</PixelButton></div> : null}
-    {catalogQuery.isError ? <div role="alert" className="text-sm text-retro-muted">Catalog could not be refreshed. <PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void catalogQuery.refetch()}>Retry catalog</PixelButton></div> : null}
-    {catalog ? <p className="text-xs text-retro-muted">Profile {catalog.host.profileKey} · Native Telegraf {catalog.host.compatibility} · {os ?? "unsupported OS"} preset · Source-derived compatibility; runtime collection/serialization {catalog.host.runtimeVerification}.</p> : null}
-    {config?.definition ? <div className="space-y-3">
-      <p className="text-sm text-retro-text">Desired definition version {config.version ?? "unknown"} · Host interval {config.definition.host.intervalSeconds}s · {config.definition.integrations.length}/16 integration instances</p>
-      {config.definition.host.intervalSeconds > 300 ? <p className="text-xs text-retro-gold">Host gathering exceeds the five-minute freshness/query window: fields may be unknown and network rates unavailable between samples; alert responsiveness is not preserved.</p> : null}
-      {config.definition.integrations.length ? <ul className="space-y-3">{config.definition.integrations.map((instance) => {
+    {configQuery.isError ? <div role="alert" className="flex flex-wrap items-center gap-3 border border-retro-red p-3 text-sm text-retro-text"><p>{configQuery.error.statusCode === 403 ? "Access denied to monitoring configuration." : configQuery.error.statusCode === 404 ? "VM or monitoring definition not found." : "Monitoring configuration could not be refreshed. Displayed settings are the last fetched snapshot."}</p><PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void configQuery.refetch()}>Retry definition</PixelButton></div> : null}
+    {catalogQuery.isError ? <p role="alert" className="text-sm text-retro-muted">Catalog unavailable. <PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void catalogQuery.refetch()}>Retry catalog</PixelButton></p> : null}
+  </>;
+  const statusNotice = statusQuery.isError ? <p role="status" className="text-sm text-retro-muted">Agent observations unavailable; this is not a service failure. <PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void statusQuery.refetch()}>Retry status</PixelButton></p> : statusQuery.isPending ? <p role="status" className="text-sm text-retro-muted">Loading agent status…</p> : null;
+  const integrations = <section className="space-y-3" aria-labelledby="vm-integrations-heading">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="vm-integrations-heading" className="text-lg font-semibold text-retro-text">Integrations{instances ? ` (${instances.length})` : ""}</h2>{editable && (instances?.length ?? 0) < 16 ? <Link to={`/vms/${encodeURIComponent(vm.id)}/integrations/new`} className="text-retro-cyan underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-retro-cyan">Add integration</Link> : null}</div>
+    {configurationErrors}{statusNotice}
+    {readOnlyReason ? <p className="text-sm text-retro-muted">{readOnlyReason}</p> : null}
+    {instances?.length ? <table role="table" className="vm-integration-table w-full table-fixed border border-retro-border bg-retro-surface text-left text-sm">
+      <caption className="sr-only">Configured integration targets and metric sample observations. Samples are not service health or target revision confirmation.</caption>
+      <thead role="rowgroup" className="text-retro-muted"><tr role="row"><th role="columnheader" scope="col" className="w-[35%]">Type / target</th><th role="columnheader" scope="col" className="w-[17%]">Collection</th><th role="columnheader" scope="col" className="w-[16%]">Sample status</th><th role="columnheader" scope="col" className="w-[14%]">Last sample</th><th role="columnheader" scope="col" className="w-[18%]">Actions</th></tr></thead>
+      <tbody role="rowgroup">{instances.map((instance) => {
         const entry = catalog?.integrations.find((candidate) => candidate.kind === instance.kind);
         const observation = status?.integrations.find((item) => item.instanceId === instance.id);
-        const configured = config.secretConfigured[instance.id] ?? {};
-        return <li key={instance.id} className="min-w-0 space-y-2 border border-retro-border p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-retro-text">{entry?.title ?? instance.kind}</h3><PixelBadge tone="neutral" variant="soft">Desired: {instance.enabled ? "enabled" : "disabled"}</PixelBadge><span className="text-xs text-retro-muted">Gather {instance.intervalSeconds}s · inputs.{entry?.plugin ?? instance.kind} · {entry?.compatibility ?? "compatibility unknown"}</span></div>
-          <p className="break-all font-mono text-xs text-retro-muted">Instance {instance.id} · {target(instance)}</p>
-          <p className="text-xs text-retro-muted">Credentials: {Object.keys(configured).length ? Object.entries(configured).map(([field, isConfigured]) => `${field}: ${isConfigured ? "configured" : "not configured"}`).join(" · ") : "No credential state reported"}. Values are never returned.</p>
-          <dl className="grid gap-2 text-xs sm:grid-cols-2"><div><dt className="text-retro-muted">Metric observation</dt><dd className="text-retro-text">{observation?.state ?? "unknown"}</dd></div><div><dt className="text-retro-muted">Observation availability</dt><dd className="text-retro-text">{observation?.availability ?? "Not reported"}</dd></div><div><dt className="text-retro-muted">Last integration metric sample ({getBrowserTimeZone()})</dt><dd className="text-retro-text">{date(observation?.lastSampleAt)}</dd></div><div><dt className="text-retro-muted">Freshness window</dt><dd className="text-retro-text">{observation?.freshnessSeconds == null ? "Not reported" : `${observation.freshnessSeconds}s`}</dd></div></dl>
-          {entry?.warning ? <p className="text-xs text-retro-gold">{entry.warning}</p> : null}
-        </li>;
-      })}</ul> : <p className="text-sm text-retro-muted">No service instances configured. Host telemetry remains enabled.</p>}
-    </div> : null}
-    <div className="space-y-3 border-t border-retro-border pt-4">
-      <h3 className="font-semibold text-retro-text">Agent configuration status</h3>
-      {statusQuery.isPending ? <p role="status" className="text-sm text-retro-muted">Loading agent status…</p> : null}
-      {statusQuery.isError ? <div role="alert" className="text-sm text-retro-muted">Agent status unavailable; this is not a plugin failure or service-health result. <PixelButton type="button" tone="neutral" variant="ghost" size="sm" onClick={() => void statusQuery.refetch()}>Retry status</PixelButton></div> : null}
-      {status ? <>
-        <p className="text-sm text-retro-text">Configuration state: <strong>{status.configState}</strong>{status.configState === "pending" ? " · Desired revision awaits agent confirmation." : status.configState === "applied" ? " · Agent ACK only, not plugin/service health." : status.configState === "rejected" ? " · Agent rejected a revision; inspect local agent configuration safely." : " · No application conclusion available."}</p>
-        <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-retro-muted">Desired version / hash</dt><dd className="break-all font-mono text-retro-text">{status.desiredVersion ?? "Not reported"} / {status.desiredHash ?? "Not reported"}</dd></div>
-          <div><dt className="text-retro-muted">Applied version / hash</dt><dd className="break-all font-mono text-retro-text">{status.appliedVersion ?? "Not reported"} / {status.appliedHash ?? "Not reported"}</dd></div>
-          <div><dt className="text-retro-muted">Rejected version / hash</dt><dd className="break-all font-mono text-retro-text">{status.rejectedVersion ?? "Not reported"} / {status.rejectedHash ?? "Not reported"}</dd></div>
-          <div><dt className="text-retro-muted">Application error</dt><dd className="text-retro-text">{status.rejectedError || status.configState === "rejected" ? "Agent reported a configuration rejection. Raw diagnostic text is not displayed." : "None reported"}</dd></div>
-          <div><dt className="text-retro-muted">Last config application ACK ({getBrowserTimeZone()})</dt><dd className="text-retro-text">{date(status.lastAppliedAt)}</dd></div>
-          <div><dt className="text-retro-muted">Last agent API contact ({getBrowserTimeZone()})</dt><dd className="text-retro-text">{date(status.lastControlContactAt)}</dd></div>
-        </dl>
-      </> : null}
-      <p className="text-xs text-retro-muted">Status polls every 15s. API contact is not AMP metric delivery; applied ACK is not plugin health. An observed metric means a sample exists for a stable instance ID, not that the edited endpoint or desired revision is applied or the service is healthy. Old target samples can remain after editing. Unknown, stale, disabled or unavailable observations are not fabricated failures.</p>
-    </div>
-    {editing && editable && config && catalog && os ? <MonitoringSettingsModal organizationId={organizationId} vmId={vm.id} role={role} os={os} initial={config} catalog={catalog} onClose={() => setEditing(false)} /> : null}
+        const label = sampleLabel(instance, observation, !status);
+        return <tr role="row" key={instance.id}>
+          <th role="rowheader" scope="row" className="min-w-0 font-normal"><span className="font-semibold text-retro-text">{entry?.title ?? instance.kind}</span><span className="mt-1 block truncate font-mono text-xs text-retro-muted" title={target(instance)}>{target(instance)}</span></th>
+          <td role="cell" data-label="Collection"><span>{instance.enabled ? "Enabled" : "Disabled"}</span><span className="block text-xs text-retro-muted">Every {instance.intervalSeconds}s</span></td>
+          <td role="cell" data-label="Sample status"><PixelBadge tone={label === "Fresh sample" ? "green" : label === "Stale" ? "gold" : "neutral"} variant="soft" size="sm">{label}</PixelBadge></td>
+          <td role="cell" data-label="Last sample"><RelativeTime value={observation?.lastSampleAt} /></td>
+          <td role="cell" data-label="Actions"><div className="flex flex-wrap gap-1"><Link to={integrationDetailPath(vm.id, instance.id)} className="inline-flex items-center px-2 py-1 text-retro-cyan underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan" aria-label={`Details for ${entry?.title ?? instance.kind} at ${target(instance)}`}>Details</Link>{editable ? <Link to={`${integrationDetailPath(vm.id, instance.id)}?tab=configuration`} className="inline-flex items-center px-2 py-1 text-retro-cyan underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan" aria-label={`Edit ${entry?.title ?? instance.kind} configuration at ${target(instance)}`}>Edit</Link> : null}</div></td>
+        </tr>;
+      })}</tbody>
+    </table> : instances ? <p className="border border-retro-border bg-retro-surface p-4 text-sm text-retro-muted">No service instances configured. Host telemetry remains enabled.</p> : null}
+    <p className="text-xs text-retro-muted">Samples belong to stable instance IDs, not confirmed endpoint revisions or service health.</p>
   </section>;
+  const agent = <section className="space-y-4" aria-labelledby="vm-agent-heading">
+    <h2 id="vm-agent-heading" className="text-lg font-semibold text-retro-text">Agent &amp; configuration</h2>
+    {configurationErrors}{statusNotice}
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="space-y-3 border border-retro-border bg-retro-surface p-4"><h3 className="font-semibold text-retro-text">Agent</h3><dl className="grid gap-3 sm:grid-cols-2"><div><dt className="text-sm text-retro-muted">Credential</dt><dd className="text-sm text-retro-text">{vm.agentStatus ?? "Not reported"}</dd></div><div><dt className="text-sm text-retro-muted">Collector</dt><dd className="text-sm text-retro-text">{collectorLabel(status ? status.collectorType : telemetry.collectorType, status ? status.collectorVersion : telemetry.collectorVersion)}</dd></div><div><dt className="text-sm text-retro-muted">Control contact</dt><dd className="text-sm text-retro-text"><RelativeTime value={contact} /></dd></div><div><dt className="text-sm text-retro-muted">Metrics delivery</dt><dd className="text-sm capitalize text-retro-text">{delivery}</dd></div></dl><p className="text-xs text-retro-muted">An active credential or API contact does not establish metric delivery or host health.</p><div className="flex flex-wrap gap-2 border-t border-retro-border pt-3">{agentActions}</div></div>
+      <div className="space-y-3 border border-retro-border bg-retro-surface p-4"><h3 className="font-semibold text-retro-text">Configuration</h3><dl className="grid gap-3 sm:grid-cols-2"><div><dt className="text-sm text-retro-muted">Backend state</dt><dd className="text-sm font-semibold text-retro-text">{configSummary}</dd></div><div><dt className="text-sm text-retro-muted">Desired / applied version</dt><dd className="text-sm text-retro-text">{status?.desiredVersion ?? "Unknown"} / {status?.appliedVersion ?? "Unknown"}</dd></div><div><dt className="text-sm text-retro-muted">Last application ACK</dt><dd className="text-sm text-retro-text"><RelativeTime value={status?.lastAppliedAt} /></dd></div><div><dt className="text-sm text-retro-muted">Host gather interval</dt><dd className="text-sm text-retro-text">{config?.definition ? `${config.definition.host.intervalSeconds}s` : "Unknown"}</dd></div></dl><p className="text-xs text-retro-muted">Backend state uses version and hash. An applied ACK is not plugin or service health.</p>{status?.configState === "rejected" ? <p role="alert" className="text-sm text-retro-red">Agent reported a configuration rejection. Inspect local configuration safely; raw diagnostics are hidden.</p> : null}{editable ? <PixelButton type="button" tone="cyan" size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit host interval</PixelButton> : null}{config?.definition && config.definition.host.intervalSeconds > 300 ? <p className="text-sm text-retro-gold">Gathering exceeds the five-minute freshness window. Values and network rates may be unavailable between samples; alerts are delayed.</p> : null}{readOnlyReason ? <p className="text-sm text-retro-muted">{readOnlyReason}</p> : null}</div>
+    </div>
+    <details className="border border-retro-border bg-retro-surface p-4"><summary className="cursor-pointer font-semibold text-retro-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan">Technical details</summary><div className="mt-4 space-y-4"><dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+      <PublicValue label="Agent ID" value={status ? status.agentId : vm.agent?.id} />
+      <PublicValue label="Desired hash" value={status?.desiredHash} />
+      <PublicValue label="Applied hash" value={status?.appliedHash} />
+      <PublicValue label="Last rejected hash" value={status?.rejectedHash} />
+      <div><dt className="text-sm text-retro-muted">Last rejected version (historical)</dt><dd className="text-sm text-retro-text">{status?.rejectedVersion ?? "Not reported"}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Reported rejection</dt><dd className="text-sm text-retro-text">{status?.rejectedError ? "A rejection was reported; diagnostic text is hidden. This may be historical, not a current failure." : "None reported"}</dd></div>
+      <PublicValue label="Collector full version" value={status ? status.collectorVersion : telemetry.collectorVersion} />
+      <PublicValue label="Collector build ID" value={status ? status.buildId : telemetry.buildId} />
+      <div><dt className="text-sm text-retro-muted">Native host state</dt><dd className="text-sm text-retro-text">{metricsUnavailable ? "unknown" : telemetry.hostState}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Telemetry compatibility / delivery</dt><dd className="text-sm text-retro-text">{telemetry.telemetryCompatibility} / {metricsUnavailable ? "unknown" : telemetry.telemetryDelivery}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Desired definition version</dt><dd className="text-sm text-retro-text">{config?.version ?? "Not reported"}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Application ACK ({getBrowserTimeZone()})</dt><dd className="text-sm text-retro-text">{date(status?.lastAppliedAt)}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Agent API contact ({getBrowserTimeZone()})</dt><dd className="text-sm text-retro-text">{date(contact)}</dd></div>
+      <div><dt className="text-sm text-retro-muted">Last metric delivery ({getBrowserTimeZone()})</dt><dd className="text-sm text-retro-text">{date(lastSeenAt)}</dd></div>
+    </dl>{catalog ? <p className="text-sm text-retro-muted">Profile {catalog.host.profileKey} · Native Telegraf {catalog.host.compatibility} · {vm.osType} preset. Source-derived compatibility; runtime collection/serialization {catalog.host.runtimeVerification}.</p> : null}<p className="text-sm text-retro-muted">Status polls every 15s. Host state requires authoritative native telemetry, not retained inventory or API contact. Unsupported platforms remain neutral. Control contact, credentials, configuration ACK and native host telemetry are separate signals. Rejected revisions may remain after a newer revision is applied. Observations can include old target samples and do not confirm a desired revision.</p></div></details>
+  </section>;
+
+  return <div className="space-y-4">
+    <header className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1">{header}</div><div className="space-y-1">{editable ? <Link to={instances?.[0] ? `${integrationDetailPath(vm.id, instances[0].id)}?tab=configuration` : `/vms/${encodeURIComponent(vm.id)}/integrations/new`} className="inline-flex px-3 py-2 text-retro-cyan underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-retro-cyan">Configure integration</Link> : null}{!editable ? <p className="max-w-60 text-xs text-retro-muted">{readOnlyReason}</p> : null}</div></header>
+    <dl className="flex flex-wrap gap-x-6 gap-y-2 border-y border-retro-border py-3 text-sm"><div className="flex flex-wrap gap-2"><dt className="text-retro-muted">Metrics delivery</dt><dd className="text-retro-text"><span className="capitalize">{delivery}</span> · <RelativeTime value={lastSeenAt} /></dd></div><div className="flex flex-wrap gap-2"><dt className="text-retro-muted">Agent contact</dt><dd className="text-retro-text"><RelativeTime value={contact} /></dd></div><div className="flex flex-wrap gap-2"><dt className="text-retro-muted">Config</dt><dd className="text-retro-text">{configSummary}</dd></div></dl>
+    <div className="vm-main-tabs min-w-0"><PixelTabs value={tab} onChange={onTabChange} keepMounted>
+      <PixelTabs.List className="vm-section-tablist" ariaLabel="Virtual machine sections"><PixelTabs.Trigger value="overview">Overview</PixelTabs.Trigger><PixelTabs.Trigger value="integrations">Integrations{instances ? ` (${instances.length})` : ""}</PixelTabs.Trigger><PixelTabs.Trigger value="agent">Agent &amp; config</PixelTabs.Trigger><PixelTabs.Trigger value="inventory">Inventory</PixelTabs.Trigger></PixelTabs.List>
+      <PixelTabs.Panel value="overview">{overview}</PixelTabs.Panel><PixelTabs.Panel value="integrations">{integrations}</PixelTabs.Panel><PixelTabs.Panel value="agent">{agent}</PixelTabs.Panel><PixelTabs.Panel value="inventory">{inventory}</PixelTabs.Panel>
+    </PixelTabs></div>
+    {editing && editable && config && catalog && os ? <MonitoringSettingsModal organizationId={organizationId} vmId={vm.id} role={role} os={os} initial={config} catalog={catalog} onClose={() => setEditing(false)} /> : null}
+  </div>;
 }

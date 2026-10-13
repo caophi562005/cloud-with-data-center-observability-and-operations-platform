@@ -126,8 +126,8 @@ variable "memory" {
 variable "runtime_secret_names" {
   type = set(string)
   validation {
-    condition     = length(setsubtract(var.runtime_secret_names, toset(["NODE_ENV", "PORT", "WEB_URL", "COGNITO_REGION", "COGNITO_USER_POOL_ID", "COGNITO_CLIENT_ID", "DATABASE_URL", "REDIS_URL", "COGNITO_CLIENT_SECRET", "ENROLLMENT_TOKEN_CACHE_KEY", "METRICS_QUERY_URL", "METRICS_QUERY_AUTH_MODE", "METRICS_USERNAME", "METRICS_QUERY_TOKEN"]))) == 0 && alltrue([for name in ["NODE_ENV", "PORT", "WEB_URL", "COGNITO_REGION", "COGNITO_USER_POOL_ID", "COGNITO_CLIENT_ID", "DATABASE_URL", "REDIS_URL", "ENROLLMENT_TOKEN_CACHE_KEY"] : contains(var.runtime_secret_names, name)])
-    error_message = "Supply all API runtime parameter names, with optional Cognito client secret and metrics query configuration."
+    condition     = length(setsubtract(var.runtime_secret_names, toset(["NODE_ENV", "PORT", "WEB_URL", "COGNITO_REGION", "COGNITO_USER_POOL_ID", "COGNITO_CLIENT_ID", "DATABASE_URL", "REDIS_URL", "COGNITO_CLIENT_SECRET", "ENROLLMENT_TOKEN_CACHE_KEY", "METRICS_QUERY_URL", "METRICS_QUERY_AUTH_MODE", "METRICS_USERNAME", "METRICS_QUERY_TOKEN", "AGENT_API_PUBLIC_URL", "AGENT_METRICS_WRITE_URL", "AGENT_MONITORING_SECRET_KEY"]))) == 0 && alltrue([for name in ["NODE_ENV", "PORT", "WEB_URL", "COGNITO_REGION", "COGNITO_USER_POOL_ID", "COGNITO_CLIENT_ID", "DATABASE_URL", "REDIS_URL", "ENROLLMENT_TOKEN_CACHE_KEY"] : contains(var.runtime_secret_names, name)])
+    error_message = "Supply all API runtime parameter names, with optional Cognito client secret, metrics query and agent monitoring configuration."
   }
 }
 

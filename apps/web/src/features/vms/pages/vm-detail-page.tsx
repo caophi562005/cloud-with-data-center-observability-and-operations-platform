@@ -6,7 +6,7 @@ import {
   PixelInput,
   PixelTabs,
 } from "@pxlkit/ui-kit";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTenant } from "../../../app/providers/app-providers";
 import { PxlKitIcon } from "../../../components/ui/pxlkit-icon";
 import { isValidVmId, useVm, useVmCurrentMetrics, useVmMetricsRange, useVmTagMutation, type VmTagOperation } from "../hooks/use-vms";
@@ -15,7 +15,10 @@ import { isMetricSupported, unsupportedMetricReason } from "../lib/metric-capabi
 import { metricSegments } from "../lib/metric-series";
 import { EMPTY_TAG_DRAFT, tagDraftReducer } from "../lib/tag-draft";
 import { isApiError } from "../../../lib/api/api-error";
-import { createLocalDateTimeFormatter, getBrowserTimeZone } from "../../../lib/date-time";
+import { createLocalDateTimeFormatter, formatLocalDateTime, getBrowserTimeZone } from "../../../lib/date-time";
+import { collectorLabel } from "../lib/collector-label";
+import { PublicValue } from "../components/vm-detail-presentation";
+import "./vm-detail.css";
 import { VM_TIME_RANGES } from "../vm.types";
 import { VmMetricCard } from "../components/vm-metric-card";
 import { VmStatusBadge } from "../components/vm-status-badge";
@@ -66,10 +69,10 @@ function MetricChart({ points, from, to, step, range, spec }: {
   const x = (value: number) => 4 + value * 632;
   const y = (value: number) => 152 - (value / max) * 144;
   return (
-    <figure className="border-2 border-retro-border bg-retro-surface p-4 shadow-[2px_2px_0_var(--cloudops-shadow)]" aria-label={`${spec.label} chart`}>
+    <figure className="min-w-0 border border-retro-border bg-retro-surface p-4" aria-label={`${spec.label} chart`}>
       <div className="flex items-start justify-between gap-3">
         <figcaption><h3 className="text-sm font-semibold text-retro-text">{spec.label}</h3><p className="mt-1 text-xs text-retro-muted">Last {range} · {timeZone}</p></figcaption>
-        <span className="font-mono text-sm font-semibold text-retro-text">{latestLabel}</span>
+        <span className="text-sm font-semibold tabular-nums text-retro-text">{latestLabel}</span>
       </div>
       <div className="mt-4 min-h-[10rem] border border-retro-border/70 bg-retro-canvas/30 p-2">
         {segments.length ? (
@@ -87,7 +90,6 @@ function MetricChart({ points, from, to, step, range, spec }: {
           </svg>
         ) : <div className="flex min-h-[9rem] items-center justify-center text-center text-sm text-retro-muted" role="status">No telemetry samples in this time range.</div>}
       </div>
-      <p className="mt-3 text-xs text-retro-muted">Latest sample: <span className="font-mono text-retro-text">{latestLabel}</span></p>
       <details className="mt-3 text-xs text-retro-muted">
         <summary className="cursor-pointer text-retro-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan">View {spec.label} samples</summary>
         <div className="mt-2 max-h-48 overflow-auto">
@@ -164,6 +166,13 @@ export function VmDetailPage(): JSX.Element {
 function VmDetailContent(): JSX.Element {
   const { vmId } = useParams<{ vmId: string }>();
   const { currentOrganization } = useTenant();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tab = requestedTab && ["overview", "integrations", "agent", "inventory"].includes(requestedTab) ? requestedTab : "overview";
+  function changeTab(value: string) {
+    if (!["overview", "integrations", "agent", "inventory"].includes(value)) return;
+    const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next);
+  }
   const vmQuery = useVm(currentOrganization?.id ?? null, vmId ?? null);
   const [connectMode, setConnectMode] = useState<"reinstall" | "recover" | null>(null);
   const [range, setRange] = useState<VmTimeRange>("1h");
@@ -211,80 +220,17 @@ function VmDetailContent(): JSX.Element {
   const metrics = currentQuery.isError ? null : currentQuery.data?.metrics;
   const telemetry = currentQuery.data ?? vm;
   // Never present the retained DB status as host health. An unavailable current read is neutral.
-  const status = currentQuery.isError ? "unknown" : telemetry.hostState;
+  const status = currentQuery.isError || !currentQuery.data ? "unknown" : currentQuery.data.hostState;
   // An explicit current null means no native metric timestamp, NOT the stored inventory timestamp.
-  const lastSeenAt = currentQuery.data ? currentQuery.data.lastSeenAt : vm.lastSeenAt;
+  const lastSeenAt = currentQuery.data ? currentQuery.data.lastSeenAt : null;
   const canManage = canManageAgent(currentOrganization.role);
   const currentCapabilities = currentQuery.isError || currentQuery.isPending
     ? undefined : currentQuery.data?.metricsCapabilities ?? vm.metricsCapabilities;
   const rangeCapabilities = rangeQuery.data?.metricsCapabilities ?? vm.metricsCapabilities;
   const currentReason = (name: MetricName) => unsupportedMetricReason(currentCapabilities, name);
   const currentValue = (name: MetricName, formatted: string) => isMetricSupported(currentCapabilities, name) ? formatted : "N/A";
-  const lifecycleMessage = currentQuery.isError
-    ? "Inventory retained. Current telemetry could not be read."
-    : status === "unsupported"
-      ? "Host state unsupported for this collector/platform. No legacy-to-native health inference is made."
-      : status === "unknown"
-        ? "Host state unknown. Agent API contact or fresh internal delivery alone does not prove host health."
-        : status === "DISCONNECTED"
-          ? `Inventory retained. No fresh native telemetry; last metric ${formatLastSeen(lastSeenAt)}.`
-          : "Host state derived from authoritative native host telemetry.";
-
-  return (
-    <div className="space-y-6" data-testid="vm-detail-page">
-      <Link to="/vms" className="inline-flex items-center gap-2 text-sm font-semibold text-retro-cyan underline underline-offset-4 hover:text-retro-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan">
-        <PxlKitIcon name="arrow-left" size={14} /> Back to virtual machines
-      </Link>
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-retro-cyan">VM detail</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h1 className="break-words text-3xl font-semibold tracking-tight text-retro-text">{vm.hostname}</h1>
-            <VmStatusBadge status={status} />
-          </div>
-          <p className="mt-2 text-sm text-retro-muted">Created {formatLastSeen(vm.createdAt)} · Inventory record</p>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-retro-muted">
-          <PixelBadge tone="neutral" variant="soft">Credential: {vm.agentStatus ?? "none"} (not delivery)</PixelBadge>
-          <PixelButton type="button" tone="neutral" variant="ghost" disabled={!canManage} onClick={() => setConnectMode("reinstall")} title={!canManage ? "Admin or Operator role required" : "Reuse protected local identity; no new code"}>Reinstall locally</PixelButton>
-          <PixelButton type="button" tone="cyan" disabled={!canManage} onClick={() => setConnectMode("recover")} title={!canManage ? "Admin or Operator role required" : "Explicit VM-bound recovery"}>Recover agent</PixelButton>
-          <span className="border border-retro-border px-2 py-1">ID <span className="font-mono text-retro-text">{vm.id}</span></span>
-        </div>
-      </div>
-
-      <div className={`border-2 p-4 ${status === "DISCONNECTED" ? "border-retro-gold bg-retro-gold/10" : "border-retro-border bg-retro-surface"}`} role={status === "DISCONNECTED" ? "alert" : "status"}>
-        <div className="flex items-start gap-3">
-          <VmStatusBadge status={status} />
-          <p className="text-sm text-retro-text">{lifecycleMessage}</p>
-        </div>
-      </div>
-
-      <section className="grid gap-4 border-2 border-retro-border bg-retro-surface p-4 shadow-[3px_3px_0_var(--cloudops-shadow)] sm:grid-cols-3" aria-labelledby="vm-identity-heading">
-        <h2 id="vm-identity-heading" className="sr-only">VM identity</h2>
-        <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">OS type</dt><dd className="mt-1 font-semibold text-retro-text">{vm.osType}</dd><p className="text-xs text-retro-muted">{vm.osVersion}</p></div>
-        <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">IP address</dt><dd className="mt-1 font-mono font-semibold text-retro-text">{vm.ipAddress}</dd></div>
-        <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">Last metric delivery</dt><dd className="mt-1 font-semibold text-retro-text">{formatLastSeen(lastSeenAt)}</dd><p className="text-xs text-retro-muted">{getBrowserTimeZone()}</p></div>
-      </section>
-
-      <section className="grid gap-3 border-2 border-retro-border bg-retro-surface p-4 text-sm sm:grid-cols-2" aria-labelledby="vm-telemetry-identity-heading">
-        <h2 id="vm-telemetry-identity-heading" className="sr-only">Collector and delivery identity</h2>
-        <p className="break-all text-retro-muted">Collector: <span className="text-retro-text">{telemetry.collectorType ?? "Unknown"} · {telemetry.collectorVersion ?? "version unknown"} · {telemetry.buildId ?? "build unknown"}</span></p>
-        <p className="text-retro-muted">Compatibility: <span className="text-retro-text">{telemetry.telemetryCompatibility}</span> · Delivery: <span className="text-retro-text">{currentQuery.isError ? "unknown" : telemetry.telemetryDelivery}</span></p>
-        <p className="text-retro-muted">Last agent API contact: <span className="text-retro-text">{formatLastSeen(telemetry.lastControlContactAt)}</span> · {getBrowserTimeZone()}</p>
-        <p className="text-xs text-retro-muted">API contact, credential state and config ACK are not metric delivery or host health. Native-only history may have an Alloy cutover gap; Windows load remains unsupported.</p>
-      </section>
-
-      <VmMonitoringSection organizationId={currentOrganization.id} role={currentOrganization.role} vm={vm} />
-
-      <section className="border-2 border-retro-border bg-retro-surface p-4 shadow-[3px_3px_0_var(--cloudops-shadow)]" aria-labelledby="vm-tags-heading">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div><h2 id="vm-tags-heading" className="text-lg font-semibold text-retro-text">Tags</h2><p className="mt-1 text-sm text-retro-muted">Use unique key:value tags to keep inventory filters consistent.</p></div>
-          <VmFullTagList tags={vm.tags} />
-        </div>
-        <div className="mt-5 border-t border-retro-border/70 pt-5">{canManage ? <TagEditor key={`${currentOrganization.id}:${vm.id}`} vm={vm} onCommit={tagMutation.mutateAsync} /> : <p className="text-sm text-retro-muted">Read-only tags.</p>}</div>
-      </section>
-
+  const overview = <div className="space-y-4">
+      {status === "DISCONNECTED" ? <p className="border border-retro-gold bg-retro-gold/10 p-3 text-sm text-retro-text" role="alert">No fresh native telemetry. Inventory is retained; the host is disconnected.</p> : null}
       <section aria-labelledby="vm-metrics-heading">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div><h2 id="vm-metrics-heading" className="text-lg font-semibold text-retro-text">Resource metrics</h2><p className="mt-1 text-sm text-retro-muted">Latest reported values · {getBrowserTimeZone()}{currentQuery.data?.sampledAt ? ` · Sampled ${formatLastSeen(currentQuery.data.sampledAt)}` : ""}</p></div>
@@ -298,19 +244,18 @@ function VmDetailContent(): JSX.Element {
         ) : currentQuery.isPending ? <p className="mb-3 text-sm text-retro-muted" role="status">Loading current metrics…</p>
           : currentCapabilities?.platform === "unknown" ? <p className="mb-3 text-sm text-retro-muted" role="status">Unsupported platform</p>
           : currentQuery.data?.metricsState === "empty" ? <p className="mb-3 text-sm text-retro-muted" role="status">No fresh telemetry samples. Missing values are shown as dashes.</p> : null}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           <VmMetricCard label="CPU" value={currentValue("cpu", formatMetric(metrics?.cpu))} detail={currentReason("cpu")} icon={<PxlKitIcon name="settings" size={14} />} />
           <VmMetricCard label="Memory" value={currentValue("memory", formatMetric(metrics?.memory))} detail={currentReason("memory")} icon={<PxlKitIcon name="cloud" size={14} />} />
           <VmMetricCard label="Disk" value={currentValue("disk", formatMetric(metrics?.disk))} detail={currentReason("disk")} icon={<PxlKitIcon name="organization" size={14} />} />
-          <VmMetricCard label="Network RX" value={currentValue("networkRx", formatMetric(metrics?.networkRx, " Mbps"))} detail={currentReason("networkRx")} icon={<PxlKitIcon name="arrow-left" size={14} />} />
-          <VmMetricCard label="Network TX" value={currentValue("networkTx", formatMetric(metrics?.networkTx, " Mbps"))} detail={currentReason("networkTx")} icon={<PxlKitIcon name="arrow-left" size={14} />} />
+          <VmMetricCard label="Network RX / TX" value={`${currentValue("networkRx", formatMetric(metrics?.networkRx, ""))} / ${currentValue("networkTx", formatMetric(metrics?.networkTx, ""))}`} detail={currentReason("networkRx") ?? currentReason("networkTx") ?? "Mbps · RX / TX"} icon={<PxlKitIcon name="arrow-left" size={14} />} />
           <VmMetricCard label="Load" value={currentValue("load", formatLoad(metrics?.load))} detail={currentReason("load")} icon={<PxlKitIcon name="warning" size={14} />} />
           <VmMetricCard label="Uptime" value={currentValue("uptimeHours", formatUptime(metrics?.uptimeHours))} detail={currentReason("uptimeHours")} icon={<PxlKitIcon name="clock" size={14} />} />
         </div>
       </section>
 
       <section className="space-y-3" aria-labelledby="vm-charts-heading">
-        <div><h2 id="vm-charts-heading" className="text-lg font-semibold text-retro-text">Telemetry charts</h2><p className="mt-1 text-sm text-retro-muted">Time range: <span className="font-mono text-retro-text">{range}</span>. Reported telemetry only; missing samples remain gaps.</p></div>
+        <div><h2 id="vm-charts-heading" className="text-lg font-semibold text-retro-text">Telemetry charts</h2><p className="mt-1 text-sm text-retro-muted">Last {range} · Missing samples remain gaps, including native collector cutover.</p></div>
         {rangeQuery.isError ? (
           <div className="border border-retro-red p-3 text-sm text-retro-text" role="alert">
             <p>{rangeQuery.error.code === "METRICS_DISABLED" ? "Metrics integration is disabled." : rangeQuery.error.statusCode === 403 ? "Access denied to telemetry charts." : rangeQuery.error.statusCode === 404 ? "Virtual machine not found." : "Telemetry charts are unavailable."}</p>
@@ -323,6 +268,30 @@ function VmDetailContent(): JSX.Element {
             </div> : null}
       </section>
 
+    </div>;
+  const inventory = <div className="space-y-4">
+    <section className="border border-retro-border bg-retro-surface p-4" aria-labelledby="vm-inventory-heading">
+      <h2 id="vm-inventory-heading" className="mb-4 text-lg font-semibold text-retro-text">Inventory</h2>
+      <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+        <div><dt className="text-sm text-retro-muted">Operating system</dt><dd className="mt-1 text-sm text-retro-text">{vm.osType}{vm.osVersion && vm.osVersion.toLowerCase() !== vm.osType.toLowerCase() ? ` · ${vm.osVersion}` : ""}</dd></div>
+        <div><dt className="text-sm text-retro-muted">IP address</dt><dd className="mt-1 break-all font-mono text-sm text-retro-text">{vm.ipAddress || "Not reported"}</dd></div>
+        <div><dt className="text-sm text-retro-muted">Created ({getBrowserTimeZone()})</dt><dd className="mt-1 text-sm text-retro-text"><time dateTime={vm.createdAt}>{formatLocalDateTime(vm.createdAt)}</time></dd></div>
+        <PublicValue label="VM ID" value={vm.id} />
+      </dl>
+    </section>
+    <section className="border border-retro-border bg-retro-surface p-4" aria-labelledby="vm-tags-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2"><h2 id="vm-tags-heading" className="text-lg font-semibold text-retro-text">Tags</h2><VmFullTagList tags={vm.tags} /></div>
+      <div className="mt-4 border-t border-retro-border pt-4">{canManage ? <TagEditor key={`${currentOrganization.id}:${vm.id}`} vm={vm} onCommit={tagMutation.mutateAsync} /> : <p className="text-sm text-retro-muted">Read-only tags.</p>}</div>
+    </section>
+  </div>;
+  return (
+    <div className="vm-detail min-w-0 space-y-4" data-testid="vm-detail-page">
+      <Link to="/vms" className="inline-flex items-center gap-2 text-sm font-semibold text-retro-cyan underline underline-offset-4 hover:text-retro-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan"><PxlKitIcon name="arrow-left" size={14} /> Back to virtual machines</Link>
+      <VmMonitoringSection tab={tab} onTabChange={changeTab} organizationId={currentOrganization.id} role={currentOrganization.role} vm={vm} telemetry={telemetry} lastSeenAt={lastSeenAt} metricsUnavailable={currentQuery.isError || !currentQuery.data}
+        header={<><div className="flex flex-wrap items-center gap-3"><h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-retro-text">{vm.hostname}</h1><VmStatusBadge status={status} /></div><p className="mt-2 text-sm text-retro-muted">{vm.osType} · {collectorLabel(telemetry.collectorType, telemetry.collectorVersion)}</p></>}
+        overview={overview} inventory={inventory}
+        agentActions={<><PixelButton type="button" tone="neutral" variant="ghost" disabled={!canManage} onClick={() => setConnectMode("reinstall")} title={!canManage ? "Admin or Operator role required" : "Reuse protected local identity; no new code"}>Reinstall locally</PixelButton><PixelButton type="button" tone="neutral" variant="ghost" disabled={!canManage} onClick={() => setConnectMode("recover")} title={!canManage ? "Admin or Operator role required" : "Explicit VM-bound recovery"}>Recover agent</PixelButton></>}
+      />
       <ConnectVmModal
         open={connectMode !== null && canManage}
         organizationId={currentOrganization.id}

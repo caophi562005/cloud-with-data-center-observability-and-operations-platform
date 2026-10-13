@@ -42,15 +42,28 @@ const definitionSchema = z.object({
   ])).max(MAX_INTEGRATION_INSTANCES),
 }).strict();
 
-export function validateMonitoringDefinition(input: unknown, os: SupportedAgentOs): MonitoringDefinition {
+// Persisted nonsecret definitions can be read without an agent OS or rendering credentials.
+export function parseMonitoringDefinition(input: unknown): MonitoringDefinition {
   try {
     assertMonitoringData(input);
-    if (os !== 'linux' && os !== 'windows') throw invalid();
     const definition = definitionSchema.parse(input);
     const ids = new Set<string>();
     for (const instance of definition.integrations) {
-      if (ids.has(instance.id) || !INTEGRATION_CATALOG[instance.kind].supportedOs.includes(os)) throw invalid();
+      if (ids.has(instance.id)) throw invalid();
       ids.add(instance.id);
+    }
+    return definition;
+  } catch {
+    throw invalid();
+  }
+}
+
+export function validateMonitoringDefinition(input: unknown, os: SupportedAgentOs): MonitoringDefinition {
+  try {
+    if (os !== 'linux' && os !== 'windows') throw invalid();
+    const definition = parseMonitoringDefinition(input);
+    for (const instance of definition.integrations) {
+      if (!INTEGRATION_CATALOG[instance.kind].supportedOs.includes(os)) throw invalid();
       if (instance.kind === 'docker' && instance.settings.endpoint !== (os === 'linux'
         ? 'unix:///var/run/docker.sock' : 'npipe:////./pipe/docker_engine')) throw invalid();
       for (const [key, value] of Object.entries(instance.settings)) {

@@ -38,10 +38,10 @@ function ConnectSession({ organizationId, role, mode = "connect", vmId, hostname
   const [copied, setCopied] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [revoked, setRevoked] = useState(false);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const lifetime = useRef({ active: true, busy: false, generation: 0, controller: undefined as AbortController | undefined });
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useLayoutEffect(() => { closeRef.current = onClose; }, [onClose]);
   const allowed = canManageAgent(role);
   const expired = Boolean(code && Date.parse(code.expiresAt) <= now);
   const canIssue = allowed && (mode === "connect" || (mode === "recover" && vmId && (!agentActive || revoked)));

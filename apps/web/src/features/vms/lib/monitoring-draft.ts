@@ -13,7 +13,7 @@ export function newIntegration(kind: IntegrationKind, os: SupportedAgentOs, inte
     case "postgresql": return { ...common, kind, settings: { host: "localhost", port: 5432, database: "postgres", sslMode: "verify-full" } };
     case "mysql": return { ...common, kind, settings: { host: "localhost", port: 3306, tls: false } };
     case "nginx": return { ...common, kind, settings: { statusUrl: "http://localhost/nginx_status", tls: false } };
-    case "docker": return { ...common, kind, settings: { endpoint: os === "linux" ? "unix:///var/run/docker.sock" : "npipe:////./pipe/docker_engine", acknowledgePrivilegedAccess: false } };
+    case "docker": return { ...common, kind, settings: { endpoint: os === "linux" ? "unix:///var/run/docker.sock" : "npipe:////./pipe/docker_engine", acknowledgePrivilegedAccess: false, collectContainerMetrics: false, containerNames: [] } };
   }
 }
 export function draftFromDefinition(definition: MonitoringDefinition): MonitoringDraft {
@@ -24,11 +24,19 @@ export function definitionFromDraft(draft: MonitoringDraft): MonitoringDefinitio
     ? { ...item, settings: { ...item.settings, acknowledgePrivilegedAccess: true } } : item) };
 }
 
+function containsForbiddenCode(value: string, maximum: number): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code <= maximum || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function safeUrl(value: string, protocols: string[]): boolean {
   try {
     const url = new URL(value);
     return value.length <= 2048 && protocols.includes(url.protocol) && Boolean(url.hostname) &&
-      !url.username && !url.password && !/[?#\x00-\x20\x7f$]/.test(value) && !/%24/i.test(value) && !url.pathname.includes("@");
+      !url.username && !url.password && !containsForbiddenCode(value, 0x20) && !/[?#$]/.test(value) && !/%24/i.test(value) && !url.pathname.includes("@");
   } catch { return false; }
 }
 function validHost(value: string): boolean {
@@ -65,12 +73,16 @@ export function validateMonitoringDraft(
         const value = patch.value;
         if (!value.trim()) fail(item.id, field, "Enter a replacement value or choose Keep; blank does not clear a credential.");
         else if (new TextEncoder().encode(value).length > (field === "username" || field === "oauthClientId" ? 256 : 4096) ||
-          /[\x00\x7f]/.test(value) || /^[*•●]+$/.test(value.trim()) || /^(?:\[REDACTED\]|<redacted>|<unchanged>|<masked>|__MASKED__)$/i.test(value.trim()) || value.includes("__OPSGRID_") || value.includes("@{"))
+          containsForbiddenCode(value, 0) || /^[*•●]+$/.test(value.trim()) || /^(?:\[REDACTED\]|<redacted>|<unchanged>|<masked>|__MASKED__)$/i.test(value.trim()) || value.includes("__OPSGRID_") || value.includes("@{"))
           fail(item.id, field, "Enter a real supported credential, not a masked value or template; check its length.");
       }
     }
     if (item.kind === "docker") {
       if (!item.settings.acknowledgePrivilegedAccess) fail(item.id, "acknowledge", "Explicitly acknowledge Docker's administrative host privileges.");
+      if (item.settings.endpoint !== (os === "linux" ? "unix:///var/run/docker.sock" : "npipe:////./pipe/docker_engine")) fail(item.id, "endpoint", "Use the fixed local Docker endpoint for this operating system.");
+      const names = item.settings.containerNames ?? [];
+      if (names.length > 32 || new Set(names).size !== names.length || names.some((name) => name.length < 1 || name.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) || (item.settings.collectContainerMetrics && names.length === 0))
+        fail(item.id, "containerNames", "Use 1–32 unique exact container names when container metrics are enabled; each name is 1–128 letters, numbers, underscores, dots or hyphens, starting with a letter or number. No wildcards.");
       continue;
     }
     const settings = item.settings;
@@ -83,7 +95,7 @@ export function validateMonitoringDraft(
     const tls = item.kind === "postgresql" ? item.settings.sslMode === "verify-full" : "tls" in settings && settings.tls;
     for (const field of ["tlsCaPath", "tlsCertPath", "tlsKeyPath"] as const) {
       const value = settings[field];
-      if (value && (value.length > 1024 || /[\x00-\x1f\x7f$]/.test(value) || !(os === "linux" ? value.startsWith("/") : /^[A-Za-z]:[\\/]/.test(value))))
+      if (value && (value.length > 1024 || containsForbiddenCode(value, 0x1f) || value.includes("$") || !(os === "linux" ? value.startsWith("/") : /^[A-Za-z]:[\\/]/.test(value))))
         fail(item.id, field, "Use an absolute local path on this agent's OS, without control characters or environment expansion.");
       if (value && !tls) fail(item.id, field, "Enable TLS or remove this TLS path explicitly.");
     }

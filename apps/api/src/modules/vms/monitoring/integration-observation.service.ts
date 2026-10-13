@@ -42,12 +42,15 @@ export class IntegrationObservationService {
       !Object.values(identity).every((id) => monitoringInstanceIdSchema.safeParse(id).success) ||
       !instances.every((instance) => monitoringInstanceIdSchema.safeParse(instance.id).success &&
         Object.hasOwn(TELEGRAF_SERVICE_FAMILIES, instance.kind) &&
-        Number.isInteger(instance.intervalSeconds) && instance.intervalSeconds >= 15 && instance.intervalSeconds <= 3600))
+        Number.isInteger(instance.intervalSeconds) && instance.intervalSeconds >= 15 && instance.intervalSeconds <= 3600 &&
+        (instance.kind !== 'postgresql' || (typeof instance.settings?.database === 'string' &&
+          /^[A-Za-z0-9_.-]{1,128}$/.test(instance.settings.database)))))
       return unknown('unavailable');
     try {
       this.provider.assertEnabled();
       const key = JSON.stringify([TELEGRAF_CONTRACT_VERSION, this.policy.staleSeconds, identity,
-        enabled.map((instance) => [instance.id, instance.kind, instance.intervalSeconds]).sort(([a], [b]) => String(a).localeCompare(String(b)))]);
+        enabled.map((instance) => [instance.id, instance.kind, instance.intervalSeconds,
+          instance.kind === 'postgresql' ? instance.settings.database : null]).sort(([a], [b]) => String(a).localeCompare(String(b)))]);
       const rows = await this.cached(key, async () => {
         const query = this.expression(identity, enabled, false);
         const current = await this.query(() => this.provider.query(query));
@@ -88,10 +91,14 @@ export class IntegrationObservationService {
     const scope = `organization_id=${JSON.stringify(identity.organizationId)},vm_id=${JSON.stringify(identity.vmId)},agent_id=${JSON.stringify(identity.agentId)}`;
     const parts: string[] = [];
     for (const kind of Object.keys(TELEGRAF_SERVICE_FAMILIES) as Array<IntegrationInstance['kind']>) {
-      const ids = instances.filter((instance) => instance.kind === kind).map((instance) => escapeMetricRegex(instance.id));
+      const selected = instances.filter((instance) => instance.kind === kind);
+      const ids = selected.map((instance) => escapeMetricRegex(instance.id));
       if (!ids.length) continue;
-      const labels = `${scope},integration_instance_id=~${JSON.stringify(ids.join('|'))}${kind === 'postgresql' ? ',db!=""' : ''}`;
-      for (const family of TELEGRAF_SERVICE_FAMILIES[kind]) {
+      const selectors = kind === 'postgresql'
+        ? selected.flatMap((instance) => instance.kind === 'postgresql'
+          ? [`${scope},integration_instance_id=${JSON.stringify(instance.id)},db=${JSON.stringify(instance.settings.database)}`] : [])
+        : [`${scope},integration_instance_id=~${JSON.stringify(ids.join('|'))}`];
+      for (const labels of selectors) for (const family of TELEGRAF_SERVICE_FAMILIES[kind]) {
         const raw = `${family}{${labels}}`;
         const time = `max by (${GROUP}) (timestamp(${raw}) and ${finiteNonnegative(raw)} and (timestamp(${raw}) <= time()))`;
         const query = history ? `max_over_time((${time})[7d:60s])` : time;
@@ -109,7 +116,7 @@ export class IntegrationObservationService {
     const samples = rows.filter((row) => row.labels.organization_id === identity.organizationId &&
       row.labels.vm_id === identity.vmId && row.labels.agent_id === identity.agentId &&
       row.labels.integration_instance_id === instance.id && families.includes(row.labels.__ops_observation_family) &&
-      (instance.kind !== 'postgresql' || Boolean(row.labels.db))).map((row) => row.value)
+      (instance.kind !== 'postgresql' || row.labels.db === instance.settings.database)).map((row) => row.value)
       .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0 && value <= now && now - value <= HISTORY_SECONDS);
     return samples.length ? Math.max(...samples) : null;
   }
