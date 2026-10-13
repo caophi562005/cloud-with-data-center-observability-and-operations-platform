@@ -33,6 +33,29 @@ function Read-EnrollmentToken() {
     }
 }
 
+function Get-OpsGridHttpStatusCode($Exception) {
+    if ($null -eq $Exception) { return $null }
+    try {
+        $response = $Exception.Response
+        if ($null -eq $response) { return $null }
+        $status = $response.StatusCode
+        if ($status -is [int]) { return [int]$status }
+        if ($null -ne $status -and $null -ne $status.value__) { return [int]$status.value__ }
+        if ($null -eq $status) { return $null }
+        return [int]$status
+    } catch { return $null }
+}
+
+function Test-OpsGridRetryableException($Exception) {
+    $current = $Exception
+    while ($null -ne $current) {
+        if ($current -is [System.TimeoutException] -or $current -is [System.Net.WebException]) { return $true }
+        if ([string]$current.GetType().FullName -eq 'System.Net.Http.HttpRequestException') { return $true }
+        $current = $current.InnerException
+    }
+    return $false
+}
+
 function Test-EnrollmentResponse($Response) {
     if ($null -eq $Response) { return $false }
     $status = Get-OpsGridPropertyValue $Response 'status'

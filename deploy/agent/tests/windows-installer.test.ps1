@@ -596,6 +596,7 @@ prometheus.remote_write "ingestion" { endpoint { url = "https://Gateway.Example.
         function Invoke-OpsGridAtomicReplace { $script:ConfigCommits++ }
         function Start-OpsGridAlloyAndWait { $false }
         function Start-Sleep { }
+        function Get-OpsGridHttpStatusCode { if ($script:Scenario -eq '429') { return 429 }; if ($script:Scenario -eq '503') { return 503 }; return $null }
         function Invoke-RestMethod {
             param($Method, $Uri, $ContentType, $Body, $TimeoutSec, $MaximumRedirection, $ErrorAction)
             $script:Posts++

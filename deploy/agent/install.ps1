@@ -56,6 +56,9 @@ function Invoke-OpsGrid {
     $script:OpsGridEnrollmentSucceeded = $false
 
     try {
+        # Reserved profile mode has no reviewed target/transaction in Task3.
+        # Refuse before preflight, path/ACL/lock/download/token or service effects.
+        if (-not [string]::IsNullOrEmpty($ApplyProfile)) { Fail-OpsGrid 10 'profile target is not reviewed; no changes made' }
         if ($Help) { Show-Usage; return }
         $script:OpsGridStage = 'url'
         $null = Test-ApiBaseUrl -Value $ApiBaseUrl
