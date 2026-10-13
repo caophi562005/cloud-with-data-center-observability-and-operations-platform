@@ -5,34 +5,20 @@ import {
   queryOptions,
   type QueryClient,
   type UseMutationOptions,
-  type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { ApiError } from "../../../lib/api/api-error";
 import { queryKeys } from "../../../lib/query/query-keys";
 import {
   addVmTag,
-  createVm,
   getVm,
   getVms,
   getVmCurrentMetrics,
   getVmMetricsRange,
   updateVmTag,
   deleteVmTag,
-  issueVmEnrollmentToken,
-  type VmCreateResponse,
-  type VmEnrollmentToken,
 } from "../api/vms.api";
 import type { Vm, VmCurrentMetrics, VmMetricsRange, VmTimeRange } from "../vm.types";
-
-export interface CreateVmVariables {
-  hostname: string;
-  tags: Record<string, string>;
-}
-
-export interface CreateVmResult extends VmCreateResponse {
-  failedTags: string[];
-}
 
 export function isValidVmId(vmId: string | null | undefined): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(vmId ?? "");
@@ -106,71 +92,4 @@ export function vmTagMutationOptions(queryClient: QueryClient, organizationId: s
 }
 export function useVmTagMutation(organizationId: string | null, vmId: string | null) {
   return useMutation(vmTagMutationOptions(useQueryClient(), organizationId, vmId));
-}
-
-export function useIssueVmEnrollmentToken(
-  organizationId: string | null,
-  vmId: string | null,
-): UseMutationResult<VmEnrollmentToken, ApiError, void> {
-  const queryClient = useQueryClient();
-
-  return useMutation<VmEnrollmentToken, ApiError, void>({
-    mutationFn: () => {
-      if (!organizationId || !vmId) {
-        throw ApiError.generic(400);
-      }
-      return issueVmEnrollmentToken(organizationId, vmId);
-    },
-    onSuccess: async () => {
-      if (!organizationId || !vmId) return;
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.vm(organizationId, vmId),
-      });
-    },
-  });
-}
-
-export function useCreateVm(
-  organizationId: string | null,
-): UseMutationResult<CreateVmResult, ApiError, CreateVmVariables> {
-  const queryClient = useQueryClient();
-
-  return useMutation<CreateVmResult, ApiError, CreateVmVariables>({
-    mutationFn: async ({ hostname, tags }) => {
-      if (!organizationId) {
-        throw ApiError.generic(400);
-      }
-
-      const response = await createVm(organizationId, { hostname });
-      const tagEntries = Object.entries(tags);
-      const tagResults = await Promise.allSettled(
-        tagEntries.map(([key, value]) =>
-          addVmTag(organizationId, response.vm.id, { key, value }),
-        ),
-      );
-      const failedTags = tagResults.flatMap((result, index) =>
-        result.status === "rejected" ? [tagEntries[index][0]] : [],
-      );
-      const appliedTags = Object.fromEntries(
-        tagEntries.flatMap(([key, value], index) =>
-          tagResults[index].status === "fulfilled" ? [[key, value]] : [],
-        ),
-      );
-
-      return {
-        ...response,
-        vm: {
-          ...response.vm,
-          tags: appliedTags,
-        },
-        failedTags,
-      };
-    },
-    onSuccess: async () => {
-      if (!organizationId) return;
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.vms(organizationId),
-      });
-    },
-  });
 }

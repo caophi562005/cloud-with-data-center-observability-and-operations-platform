@@ -10,6 +10,9 @@ export const queryKeys = {
   members: (id: string) => ["members", id] as const,
   vms: (id: string) => ["vms", id] as const,
   vm: (organizationId: string, vmId: string) => ["vm", organizationId, vmId] as const,
+  monitoringCatalog: (organizationId: string) => ["monitoring-catalog", organizationId] as const,
+  vmMonitoringConfig: (organizationId: string, vmId: string) => ["vm-monitoring-config", organizationId, vmId] as const,
+  agentStatus: (organizationId: string, vmId: string) => ["agent-status", organizationId, vmId] as const,
   vmCurrentMetrics: (organizationId: string, vmId: string) => ["vm-metrics", organizationId, vmId, "current"] as const,
   vmMetricsRange: (organizationId: string, vmId: string, range: string) => ["vm-metrics", organizationId, vmId, "range", range] as const,
 };

@@ -4,6 +4,9 @@ Set-StrictMode -Version Latest
 
 $script:OutputPrefix = '[opsgrid-agent]'
 $script:ReleaseBaseUrl = 'https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/latest/download'
+$script:OpsGridReleaseCollector = 'telegraf'
+$script:NativeBuildID = 'opsgrid-custom-6ab4b57bbaede19d'
+if ($script:OpsGridReleaseCollector -eq 'telegraf') { $script:ReleaseBaseUrl = 'https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/download/' + $script:NativeBuildID }
 $script:TempRoot = $null
 $script:ExitCode = 0
 
@@ -12,14 +15,15 @@ function Write-LauncherLog([string]$Message) {
 }
 
 function Write-LauncherUsage {
-    Write-LauncherLog 'Usage: install-launcher.ps1 -Token TOKEN [-ApiBaseUrl URL]'
+    Write-LauncherLog 'Usage: install-launcher.ps1 [-Token ENR_CODE] [-ApiBaseUrl HTTPS_ORIGIN] [-GatewayUrl HTTPS_WRITE_URL] [-ReEnroll]'
+    Write-LauncherLog 'Prefer temporary OPSGRID_ENROLLMENT_TOKEN. -Token may remain in initial argv/history; native mode does not forward it into child/native/service argv. Reruns reuse protected identity.'
     Write-LauncherLog '  -Token TOKEN  Enrollment token input (not echoed)'
     Write-LauncherLog '  -ApiBaseUrl URL  API origin (default: https://api.opsgrid.hacmieu.com)'
     Write-LauncherLog '  -Help         Show this help text'
 }
 
 function Get-LauncherArguments([string[]]$Arguments) {
-    $token = $null; $showHelp = $false; $baseUrl = 'https://api.opsgrid.hacmieu.com'
+    $token = $null; $showHelp = $false; $baseUrl = 'https://api.opsgrid.hacmieu.com'; $gatewayUrl = 'https://ingest.opsgrid.hacmieu.com/api/v1/write'; $reEnroll = $false
     $seen = @{}
     try {
         for ($index = 0; $index -lt $Arguments.Count; $index++) {
@@ -29,7 +33,8 @@ function Get-LauncherArguments([string[]]$Arguments) {
                 if ($seen.ContainsKey('Help')) { throw [ArgumentException]::new('duplicate launcher argument') }
                 $seen.Help = $true; $showHelp = $true; continue
             }
-            if ($argument -notmatch '^(?i)-(Token|ApiBaseUrl)(?:=(.*))?$') { throw [ArgumentException]::new('invalid launcher arguments') }
+            if ($argument -ieq '-ReEnroll') { if ($seen.ContainsKey('ReEnroll')) { throw [ArgumentException]::new('duplicate launcher argument') }; $seen.ReEnroll=$true; $reEnroll=$true; continue }
+            if ($argument -notmatch '^(?i)-(Token|ApiBaseUrl|GatewayUrl)(?:=(.*))?$') { throw [ArgumentException]::new('invalid launcher arguments') }
             $name = $matches[1]; $hasEquals = $argument.Contains('='); $value = $matches[2]
             if ($seen.ContainsKey($name)) { throw [ArgumentException]::new('duplicate launcher argument') }
             if (-not $hasEquals) {
@@ -38,13 +43,15 @@ function Get-LauncherArguments([string[]]$Arguments) {
             }
             if ([string]::IsNullOrWhiteSpace($value) -or $value -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('invalid launcher argument') }
             $seen[$name] = $true
-            if ($name -ieq 'Token') { $token = $value } else { $baseUrl = $value }
+            if ($name -ieq 'Token') { $token = $value } elseif ($name -ieq 'GatewayUrl') { $gatewayUrl = $value } else { $baseUrl = $value }
         }
         $null = Test-LauncherApiBaseUrl $baseUrl
         if ($showHelp) { return [pscustomobject]@{ Help=$true; Token=$null; ApiBaseUrl=$baseUrl } }
         if (-not $seen.ContainsKey('Token')) { $token = [Environment]::GetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', 'Process') }
-        if ([string]::IsNullOrWhiteSpace($token) -or $token -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('enrollment token is required') }
-        return [pscustomobject]@{ Help=$false; Token=$token; ApiBaseUrl=$baseUrl }
+        if ($script:OpsGridReleaseCollector -eq 'alloy' -and [string]::IsNullOrWhiteSpace($token)) { throw [ArgumentException]::new('enrollment token is required') }
+        if ($token -match '[\x00-\x1F\x7F]') { throw [ArgumentException]::new('invalid token') }
+        if ($script:OpsGridReleaseCollector -eq 'telegraf' -and -not $baseUrl.StartsWith('https://')) { throw [ArgumentException]::new('native API requires HTTPS') }
+        return [pscustomobject]@{ Help=$false; Token=$token; ApiBaseUrl=$baseUrl; GatewayUrl=$gatewayUrl; ReEnroll=$reEnroll }
     }
     finally { [Environment]::SetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN', $null, 'Process') }
 }
@@ -131,15 +138,37 @@ function Test-LauncherApiBaseUrl([string]$Value) {
 function New-LauncherTempRoot {
     $base = [IO.Path]::GetTempPath()
     $path = Join-Path $base ('opsgrid-agent-launcher-' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    $parent=New-Object IO.DirectoryInfo($base)
+    while ($parent) { if (($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'unsafe temp parent' }; $parent=$parent.Parent }
+    New-Item -ItemType Directory -Path $path -ErrorAction Stop | Out-Null
+    $acl=New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true,$false)
+    $admins=New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544'); $system=New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $acl.SetOwner($admins)
+    foreach ($sid in @($admins,$system)) { $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit, ObjectInherit','None','Allow')) }
+    [IO.Directory]::SetAccessControl($path,$acl)
     return $path
 }
 
 function Download-LauncherAsset([string]$AssetName, [string]$Destination) {
     $temporary = '{0}.tmp' -f $Destination
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri ('{0}/{1}' -f $script:ReleaseBaseUrl, $AssetName) `
-            -OutFile $temporary -ErrorAction Stop
+        Add-Type -AssemblyName System.Net.Http
+        $handler=New-Object Net.Http.HttpClientHandler; $handler.AllowAutoRedirect=$false
+        $client=New-Object Net.Http.HttpClient($handler); $client.Timeout=[TimeSpan]::FromMinutes(3)
+        try {
+            $url=[Uri]($script:ReleaseBaseUrl+'/'+$AssetName); $downloaded=$false
+            for ($i=0; $i -le 5; $i++) {
+                if ($url.Scheme -cne 'https' -or $url.UserInfo) { throw 'unsafe release redirect' }
+                $response=$client.GetAsync($url).GetAwaiter().GetResult()
+                try {
+                    if ([int]$response.StatusCode -in @(301,302,303,307,308)) { $url=[Uri]::new($url,$response.Headers.Location); continue }
+                    $null=$response.EnsureSuccessStatusCode()
+                    [IO.File]::WriteAllBytes($temporary,$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()); $downloaded=$true; break
+                } finally { $response.Dispose() }
+            }
+            if (-not $downloaded) { throw 'release redirect limit' }
+        } finally { $client.Dispose(); $handler.Dispose() }
         if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) { throw 'asset was not written' }
         if ((Get-Item -LiteralPath $temporary -Force).Length -le 0) { throw 'asset was empty' }
         Move-Item -LiteralPath $temporary -Destination $Destination -Force -ErrorAction Stop
@@ -208,6 +237,26 @@ function Invoke-Launcher([string[]]$Arguments) {
         if ($parsed.Help) { Write-LauncherUsage; return }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $script:TempRoot = New-LauncherTempRoot
+        if ($script:OpsGridReleaseCollector -eq 'telegraf') {
+            Download-LauncherAsset 'release-manifest.json' (Join-Path $script:TempRoot 'release-manifest.json')
+            $manifest=[IO.File]::ReadAllText((Join-Path $script:TempRoot 'release-manifest.json')) | ConvertFrom-Json
+            if ($manifest.schemaVersion -ne 1 -or $manifest.collector -cne 'telegraf' -or $manifest.buildID -cne $script:NativeBuildID) { throw 'wrong native release' }
+            $asset=@($manifest.assets | Where-Object { $_.name -ceq 'install.ps1' })
+            if ($asset.Count -ne 1 -or $asset[0].sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'native installer metadata invalid' }
+            $installer=Join-Path $script:TempRoot 'install.ps1'
+            Download-LauncherAsset 'install.ps1' $installer
+            if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $asset[0].sha256) { throw 'native installer hash mismatch' }
+            $tokens=$null; $errors=$null
+            $null=[Management.Automation.Language.Parser]::ParseFile($installer,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'native installer syntax invalid' }
+            $childArguments=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$installer,'-ApiBaseUrl',$parsed.ApiBaseUrl,'-GatewayUrl',$parsed.GatewayUrl)
+            if ($parsed.ReEnroll) { $childArguments+='-ReEnroll' }
+            # Transient bootstrap environment; no token in child/native service argv.
+            [Environment]::SetEnvironmentVariable('OPSGRID_ENROLLMENT_TOKEN',[string]$parsed.Token,'Process')
+            & powershell.exe @childArguments
+            $script:ExitCode=$LASTEXITCODE
+            return
+        }
         $alloyDirectory = Join-Path $script:TempRoot 'alloy'
         New-Item -ItemType Directory -Path $alloyDirectory -Force | Out-Null
         Download-LauncherAsset 'install.ps1' (Join-Path $script:TempRoot 'install.ps1')

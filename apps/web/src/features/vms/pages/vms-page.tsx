@@ -1,37 +1,36 @@
-import { useMemo, useState, type FormEvent, type JSX } from "react";
+import { useMemo, useState, type JSX } from "react";
 import {
   PixelBadge,
   PixelButton,
   PixelEmptyState,
   PixelInput,
-  PixelModal,
   PixelMultiSelect,
   PixelSelect,
 } from "@pxlkit/ui-kit";
 import { Link } from "react-router-dom";
 import { useTenant } from "../../../app/providers/app-providers";
 import { PxlKitIcon } from "../../../components/ui/pxlkit-icon";
-import { formatLocalDateTime, getBrowserTimeZone } from "../../../lib/date-time";
-import { useCreateVm, useVms } from "../hooks/use-vms";
-import type { Vm, VmGroupBy, VmStatus } from "../vm.types";
-import { VM_STATUSES } from "../vm.types";
+import { useVms } from "../hooks/use-vms";
+import type { Vm, VmGroupBy, VmHostState } from "../vm.types";
+import { VM_HOST_STATES } from "../vm.types";
 import { isMetricSupported } from "../lib/metric-capabilities";
 import { VmStatusBadge } from "../components/vm-status-badge";
 import { VmTagList } from "../components/vm-tag-list";
+import { ConnectVmModal } from "../components/connect-vm-modal";
+import { canManageAgent } from "../lib/agent-connect";
 import {
   STATUS_LABELS,
   filterVms,
   formatMetric,
   formatUptime,
   groupVms,
-  parseTagsInput,
   tagKeys,
   tagsToOptions,
 } from "../lib/vm-utils";
 
 const statusOptions = [
   { value: "ALL", label: "All statuses" },
-  ...VM_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+  ...VM_HOST_STATES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
 ];
 
 function inventoryCapabilities(vm: Vm) {
@@ -74,7 +73,7 @@ function VmRows({ vms }: { vms: Vm[] }) {
                   {inventoryCapabilities(vm)?.platform === "unknown" ? <span className="mt-1 block text-xs text-retro-muted">Unsupported platform</span> : null}
                 </td>
                 <td className="px-4 py-3 text-sm text-retro-text">{vm.osType}</td>
-                <td className="px-4 py-3"><VmStatusBadge status={vm.status} /></td>
+                <td className="px-4 py-3"><VmStatusBadge status={vm.hostState} /></td>
                 <td className="px-4 py-3 font-mono text-sm text-retro-text">{renderMetric(vm, "cpu")}</td>
                 <td className="px-4 py-3 font-mono text-sm text-retro-text">{renderMetric(vm, "memory")}</td>
                 <td className="px-4 py-3 font-mono text-sm text-retro-text">{renderMetric(vm, "disk")}</td>
@@ -100,7 +99,7 @@ function VmRows({ vms }: { vms: Vm[] }) {
                 <p className="mt-1 text-xs text-retro-muted">{vm.osType} · {vm.ipAddress}</p>
                 {inventoryCapabilities(vm)?.platform === "unknown" ? <p className="mt-1 text-xs text-retro-muted">Unsupported platform</p> : null}
               </div>
-              <VmStatusBadge status={vm.status} />
+              <VmStatusBadge status={vm.hostState} />
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <div><dt className="text-xs text-retro-muted">CPU</dt><dd className="font-mono text-retro-text">{renderMetric(vm, "cpu")}</dd></div>
@@ -116,135 +115,22 @@ function VmRows({ vms }: { vms: Vm[] }) {
   );
 }
 
-function AddVmModal({
-  open,
-  organizationId,
-  onClose,
-}: {
-  open: boolean;
-  organizationId: string | null;
-  onClose: () => void;
-}) {
-  const [hostname, setHostname] = useState("");
-  const [tagsInput, setTagsInput] = useState("");
-  const [error, setError] = useState<string>();
-  const createVmMutation = useCreateVm(organizationId);
-  const result = createVmMutation.data;
-
-  function reset() {
-    setHostname("");
-    setTagsInput("");
-    setError(undefined);
-    createVmMutation.reset();
-  }
-
-  function handleClose() {
-    reset();
-    onClose();
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const normalizedHostname = hostname.trim();
-    if (!organizationId) {
-      setError("Select an organization before creating a VM.");
-      return;
-    }
-    if (!normalizedHostname) {
-      setError("Hostname is required.");
-      return;
-    }
-    const parsedTags = parseTagsInput(tagsInput);
-    if (parsedTags.error) {
-      setError(parsedTags.error);
-      return;
-    }
-    setError(undefined);
-    createVmMutation.mutate(
-      { hostname: normalizedHostname, tags: parsedTags.tags },
-    );
-  }
-
-  return (
-    <PixelModal
-      open={open}
-      onClose={handleClose}
-      title="Add virtual machine"
-      description="Create the VM inventory record and issue a one-time agent enrollment token."
-      size="md"
-      footer={(
-        <div className="flex justify-end gap-2">
-          {result ? (
-            <PixelButton type="button" tone="cyan" onClick={handleClose}>Done</PixelButton>
-          ) : (
-            <>
-              <PixelButton type="button" tone="neutral" variant="ghost" onClick={handleClose}>Cancel</PixelButton>
-              <PixelButton type="submit" form="add-vm-form" tone="cyan" disabled={createVmMutation.isPending}>
-                {createVmMutation.isPending ? "Creating…" : "Add VM"}
-              </PixelButton>
-            </>
-          )}
-        </div>
-      )}
-    >
-      {result ? (
-        <div className="space-y-4" role="status" aria-live="polite">
-          <div className="border-2 border-retro-green bg-retro-green/10 p-3">
-            <p className="text-sm font-semibold text-retro-text">VM created: {result.vm.hostname}</p>
-            <p className="mt-1 text-xs text-retro-muted">Copy this token now. It is returned only during VM creation.</p>
-          </div>
-          <div className="border-2 border-retro-border bg-retro-canvas/40 p-3">
-            <p className="text-xs uppercase tracking-[0.08em] text-retro-muted">Enrollment token</p>
-            <code className="mt-2 block break-all font-mono text-sm text-retro-text">{result.enrollment.token}</code>
-            <p className="mt-2 text-xs text-retro-muted">Expires {formatLocalDateTime(result.enrollment.expiresAt, { dateStyle: "medium", timeStyle: "short" })} · {getBrowserTimeZone()}</p>
-          </div>
-          {result.failedTags.length > 0 ? (
-            <p className="text-sm text-retro-gold" role="alert">
-              VM was created, but these tags could not be saved: {result.failedTags.join(", ")}.
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <form id="add-vm-form" className="grid gap-4" onSubmit={handleSubmit} noValidate>
-          <PixelInput
-            label="Hostname"
-            placeholder="e.g. web-prod-04"
-            value={hostname}
-            onChange={(event) => setHostname(event.target.value)}
-            error={error && !hostname.trim() ? error : undefined}
-            required
-            autoFocus
-          />
-          <PixelInput
-            label="Tags (optional)"
-            hint="Separate tags with commas, for example site:sea-01, role:api"
-            placeholder="site:sea-01, role:api"
-            value={tagsInput}
-            onChange={(event) => setTagsInput(event.target.value)}
-            error={error && hostname.trim() ? error : undefined}
-          />
-          {createVmMutation.isError ? (
-            <p className="text-sm text-retro-red" role="alert">{createVmMutation.error.message}</p>
-          ) : null}
-          <div className="border-2 border-dashed border-retro-border p-3">
-            <p className="text-sm font-semibold text-retro-text">Agent enrollment</p>
-            <p className="mt-1 text-xs text-retro-muted">The token above is used by the Linux or Windows release launcher.</p>
-          </div>
-        </form>
-      )}
-    </PixelModal>
-  );
+export function VmsPage(): JSX.Element {
+  const { currentOrganization } = useTenant();
+  return <VmsContent key={`${currentOrganization?.id ?? ""}:${currentOrganization?.role ?? ""}`} />;
 }
 
-export function VmsPage(): JSX.Element {
+function VmsContent(): JSX.Element {
   const { currentOrganization } = useTenant();
   const vmsQuery = useVms(currentOrganization?.id ?? null);
   const vms = useMemo(() => vmsQuery.data ?? [], [vmsQuery.data]);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<VmStatus | "ALL">("ALL");
+  const [status, setStatus] = useState<VmHostState | "ALL">("ALL");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<VmGroupBy>("none");
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [connectScope, setConnectScope] = useState<string | null>(null);
+  const scope = `${currentOrganization?.id ?? ""}:${currentOrganization?.role ?? ""}`;
+  const canConnect = canManageAgent(currentOrganization?.role);
 
   const filteredVms = useMemo(() => filterVms(vms, { query, status, tags: selectedTags }), [vms, query, status, selectedTags]);
   const groups = useMemo(() => groupVms(filteredVms, groupBy), [filteredVms, groupBy]);
@@ -257,8 +143,8 @@ export function VmsPage(): JSX.Element {
     { value: "untagged", label: "Untagged" },
   ], [vms]);
 
-  const statusCounts = useMemo(() => VM_STATUSES.reduce<Record<string, number>>((counts, value) => {
-    counts[value] = vms.filter((vm) => vm.status === value).length;
+  const statusCounts = useMemo(() => VM_HOST_STATES.reduce<Record<string, number>>((counts, value) => {
+    counts[value] = vms.filter((vm) => vm.hostState === value).length;
     return counts;
   }, {}), [vms]);
 
@@ -280,13 +166,13 @@ export function VmsPage(): JSX.Element {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-retro-text">Virtual machines</h1>
           <p className="mt-2 max-w-2xl text-sm text-retro-muted">Monitor host health, resource pressure, and agent connectivity across your inventory.</p>
         </div>
-        <PixelButton type="button" tone="cyan" onClick={() => setIsAddOpen(true)} disabled={!currentOrganization}>
-          <span className="mr-2" aria-hidden="true">+</span>Add VM
+        <PixelButton type="button" tone="cyan" onClick={() => setConnectScope(scope)} disabled={!currentOrganization || !canConnect} title={!canConnect ? "Admin or Operator role required" : undefined}>
+          <PxlKitIcon name="cloud" size={14} /> Connect VM
         </PixelButton>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Virtual machine status summary">
-        {VM_STATUSES.map((vmStatus) => (
+        {VM_HOST_STATES.map((vmStatus) => (
           <button
             type="button"
             key={vmStatus}
@@ -311,7 +197,7 @@ export function VmsPage(): JSX.Element {
             clearable
             onClear={() => setQuery("")}
           />
-          <PixelSelect label="Status" options={statusOptions} value={status} onChange={(value) => setStatus(value as VmStatus | "ALL")} />
+          <PixelSelect label="Status" options={statusOptions} value={status} onChange={(value) => setStatus(value as VmHostState | "ALL")} />
           <PixelMultiSelect label="Tags (all must match)" placeholder="Filter by tags" options={tagOptions} value={selectedTags} onChange={setSelectedTags} searchable clearable />
           <PixelSelect label="Group by" options={groupOptions} value={groupBy} onChange={(value) => setGroupBy(value as VmGroupBy)} />
         </div>
@@ -380,9 +266,9 @@ export function VmsPage(): JSX.Element {
           {filteredVms.length === 0 ? (
             <PixelEmptyState
               title={vms.length === 0 ? "No virtual machines yet" : "No matching virtual machines"}
-              description={vms.length === 0 ? "Add a VM to start building your inventory." : "Try a different hostname, status, or tag combination."}
+              description={vms.length === 0 ? "Connect a machine using a one-time install code. It appears here after successful registration; add tags afterwards." : "Try a different hostname, status, or tag combination."}
               icon={<PxlKitIcon name="cloud" size={28} />}
-              action={vms.length === 0 ? <PixelButton type="button" tone="cyan" onClick={() => setIsAddOpen(true)}>Add VM</PixelButton> : <PixelButton type="button" tone="neutral" variant="soft" onClick={clearFilters}>Clear filters</PixelButton>}
+              action={vms.length === 0 ? <PixelButton type="button" tone="cyan" disabled={!canConnect} onClick={() => setConnectScope(scope)}>Connect VM</PixelButton> : <PixelButton type="button" tone="neutral" variant="soft" onClick={clearFilters}>Clear filters</PixelButton>}
             />
           ) : (
             <div className="space-y-5">
@@ -402,11 +288,12 @@ export function VmsPage(): JSX.Element {
         </>
       )}
 
-      <AddVmModal
-        open={isAddOpen}
-        organizationId={currentOrganization?.id ?? null}
-        onClose={() => setIsAddOpen(false)}
-      />
+      {currentOrganization ? <ConnectVmModal
+        open={connectScope === scope && canConnect}
+        organizationId={currentOrganization.id}
+        role={currentOrganization.role}
+        onClose={() => setConnectScope(null)}
+      /> : null}
     </div>
   );
 }

@@ -1,18 +1,22 @@
-import type { Vm, VmFilters, VmGroupBy, VmStatus } from "../vm.types";
+import type { Vm, VmFilters, VmGroupBy, VmHostState } from "../vm.types";
 import { formatLocalDateTime } from "../../../lib/date-time";
 
-export const STATUS_LABELS: Record<VmStatus, string> = {
+export const STATUS_LABELS: Record<VmHostState, string> = {
   HEALTHY: "Healthy",
   WARNING: "Warning",
   CRITICAL: "Critical",
   DISCONNECTED: "Disconnected",
+  unknown: "Unknown host state",
+  unsupported: "Unsupported host state",
 };
 
-export const STATUS_TONES: Record<VmStatus, "cyan" | "green" | "gold" | "red" | "neutral"> = {
+export const STATUS_TONES: Record<VmHostState, "cyan" | "green" | "gold" | "red" | "neutral"> = {
   HEALTHY: "green",
   WARNING: "gold",
   CRITICAL: "red",
   DISCONNECTED: "neutral",
+  unknown: "neutral",
+  unsupported: "neutral",
 };
 
 export function tagToString(key: string, value: string): string {
@@ -34,7 +38,7 @@ export function filterVms(vms: Vm[], filters: VmFilters): Vm[] {
 
   return vms.filter((vm) => {
     const matchesQuery = query.length === 0 || vm.hostname.toLocaleLowerCase().includes(query);
-    const matchesStatus = filters.status === "ALL" || vm.status === filters.status;
+    const matchesStatus = filters.status === "ALL" || (vm.hostState ?? "unknown") === filters.status;
     const matchesTags = filters.tags.every((selectedTag) => {
       const [key, ...valueParts] = selectedTag.split(":");
       const value = valueParts.join(":");
@@ -51,7 +55,7 @@ export function groupVms(vms: Vm[], groupBy: VmGroupBy): Array<{ label: string; 
   const groups = new Map<string, Vm[]>();
   const getKey = (vm: Vm): string => {
     if (groupBy === "os") return vm.osType;
-    if (groupBy === "status") return STATUS_LABELS[vm.status];
+    if (groupBy === "status") return STATUS_LABELS[vm.hostState ?? "unknown"];
     if (groupBy === "untagged") return Object.keys(vm.tags).length === 0 ? "Untagged" : "Tagged";
     const key = groupBy.slice(4);
     return vm.tags[key] ? `${key}: ${vm.tags[key]}` : `No ${key} tag`;
@@ -81,7 +85,7 @@ export function formatUptime(hours: number | null | undefined): string {
 }
 
 export function formatLastSeen(lastSeenAt: string | null): string {
-  if (!lastSeenAt) return "No heartbeat recorded";
+  if (!lastSeenAt) return "Not recorded";
   return formatLocalDateTime(lastSeenAt);
 }
 

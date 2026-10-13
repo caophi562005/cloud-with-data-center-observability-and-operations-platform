@@ -1,0 +1,349 @@
+--- a/agent/agent.go
++++ b/agent/agent.go
+@@ -26,6 +26,9 @@
+ // Agent runs a set of plugins.
+ type Agent struct {
+ 	Config *config.Config
++	// StartupReady is optional and called only after native plugin startup.
++	// The managed profile forbids processors/aggregators; failure is cleaned up.
++	StartupReady func() error
+ }
+ 
+ // NewAgent returns an Agent for the given Config.
+@@ -144,6 +147,18 @@
+ 	if err != nil {
+ 		return err
+ 	}
++	// Heartbeat Connect already starts its goroutine, before runOutputs owns
++	// cleanup. Close all connected outputs synchronously on partial startup.
++	outputsOwnedByRun := false
++	if a.StartupReady != nil {
++		defer func() {
++			if !outputsOwnedByRun {
++				for _, output := range ou.outputs {
++					output.Close()
++				}
++			}
++		}()
++	}
+ 
+ 	var apu []*processorUnit
+ 	var au *aggregatorUnit
+@@ -171,6 +186,15 @@
+ 	if err != nil {
+ 		return err
+ 	}
++	if a.StartupReady != nil {
++		if err := a.StartupReady(); err != nil {
++			for _, input := range iu.inputs {
++				input.Stop()
++			}
++			return err
++		}
++	}
++	outputsOwnedByRun = true
+ 
+ 	var wg sync.WaitGroup
+ 	wg.Add(1)
+@@ -801,6 +825,9 @@
+ 				continue
+ 			}
+ 
++			if a.StartupReady != nil {
++				output.Close()
++			}
+ 			for _, unitOutput := range unit.outputs {
+ 				unitOutput.Close()
+ 			}
+--- a/cmd/telegraf/main.go
++++ b/cmd/telegraf/main.go
+@@ -16,6 +16,7 @@
+ 	"github.com/influxdata/telegraf/config"
+ 	"github.com/influxdata/telegraf/internal"
+ 	"github.com/influxdata/telegraf/internal/goplugin"
++	"github.com/influxdata/telegraf/internal/opsgrid"
+ 	"github.com/influxdata/telegraf/logger"
+ 	_ "github.com/influxdata/telegraf/plugins/aggregators/all"
+ 	"github.com/influxdata/telegraf/plugins/inputs"
+@@ -98,6 +99,21 @@
+ 	return r
+ }
+ 
++func validateManagedFlags(ctx *cli.Context) error {
++	if !ctx.Bool("opsgrid-managed") {
++		return nil
++	}
++	if ctx.String("state-dir") == "" {
++		return errors.New("[opsgrid-agent] STATE_DIR_REQUIRED")
++	}
++	for _, name := range []string{"config", "config-directory", "watch-config", "watch-interval", "watch-debounce-interval", "config-url-watch-interval", "config-url-retry-attempts", "plugin-directory", "input-filter", "output-filter", "processor-filter", "aggregator-filter", "secretstore-filter", "select", "test", "test-wait", "once", "pprof-addr", "password", "unprotected", "old-env-behavior", "non-strict-env-handling", "print-plugin-config-source", "debug", "pidfile"} {
++		if ctx.IsSet(name) {
++			return errors.New("[opsgrid-agent] MANAGED_FLAG_CONFLICT")
++		}
++	}
++	return nil
++}
++
+ // runApp defines all the subcommands and flags for Telegraf
+ // this abstraction is used for testing, so outputBuffer and args can be changed
+ func runApp(args []string, outputBuffer io.Writer, pprof Server, c TelegrafConfig, m App) error {
+@@ -146,6 +162,10 @@
+ 		},
+ 	}
+ 
++	configHandlingFlags = append(configHandlingFlags,
++		&cli.BoolFlag{Name: "opsgrid-managed", Usage: "run protected OpsGrid native lifecycle"},
++		&cli.StringFlag{Name: "state-dir", Usage: "absolute protected OpsGrid state directory"},
++	)
+ 	mainFlags := append(configHandlingFlags, cliFlags()...)
+ 
+ 	// This function is used when Telegraf is run with only flags
+@@ -156,6 +176,9 @@
+ 			return fmt.Errorf("unknown command %q", cCtx.Args().First())
+ 		}
+ 
++		if err := validateManagedFlags(cCtx); err != nil {
++			return err
++		}
+ 		// Deprecated: Use execd instead
+ 		// Load external plugins, if requested.
+ 		if cCtx.String("plugin-directory") != "" {
+@@ -250,6 +273,8 @@
+ 		filters := processFilterFlags(cCtx)
+ 
+ 		g := GlobalFlags{
++			opsgridManaged:          cCtx.Bool("opsgrid-managed"),
++			opsgridStateDir:         cCtx.String("state-dir"),
+ 			config:                  cCtx.StringSlice("config"),
+ 			configDir:               cCtx.StringSlice("config-directory"),
+ 			testWait:                cCtx.Int("test-wait"),
+@@ -290,6 +315,25 @@
+ 	)
+ 	commands = append(commands, getPluginCommands(outputBuffer)...)
+ 	commands = append(commands, getServiceCommands(outputBuffer)...)
++	commands = append(commands, &cli.Command{
++		Name: "opsgrid-enroll", Usage: "enroll once using bounded stdin; reuse existing identity offline",
++		Flags: []cli.Flag{
++			&cli.StringFlag{Name: "api-url", Required: true}, &cli.StringFlag{Name: "metrics-url", Required: true},
++			&cli.StringFlag{Name: "state-dir", Required: true}, &cli.BoolFlag{Name: "token-stdin", Required: true},
++			&cli.BoolFlag{Name: "re-enroll", Usage: "operator-only VM-bound recovery; stop managed runtime first"},
++		},
++		Action: func(cCtx *cli.Context) error {
++			if !cCtx.Bool("token-stdin") {
++				return errors.New("[opsgrid-agent] TOKEN_STDIN_REQUIRED")
++			}
++			err := opsgrid.Enrollment(cCtx.Context, opsgrid.Options{StateDir: cCtx.String("state-dir"), APIOrigin: cCtx.String("api-url"), MetricsWriteURL: cCtx.String("metrics-url")},
++				os.Stdin, internal.Version, internal.Branch, cCtx.Bool("re-enroll"))
++			if err == nil {
++				fmt.Fprintln(outputBuffer, "[opsgrid-agent] ENROLLMENT_READY")
++			}
++			return err
++		},
++	})
+ 
+ 	app := &cli.App{
+ 		Name:   "Telegraf",
+--- a/cmd/telegraf/telegraf.go
++++ b/cmd/telegraf/telegraf.go
+@@ -22,6 +22,7 @@
+ 	"github.com/influxdata/telegraf/agent"
+ 	"github.com/influxdata/telegraf/config"
+ 	"github.com/influxdata/telegraf/internal"
++	"github.com/influxdata/telegraf/internal/opsgrid"
+ 	"github.com/influxdata/telegraf/logger"
+ 	"github.com/influxdata/telegraf/plugins/aggregators"
+ 	"github.com/influxdata/telegraf/plugins/inputs"
+@@ -34,6 +35,8 @@
+ var stop chan struct{}
+ 
+ type GlobalFlags struct {
++	opsgridManaged          bool
++	opsgridStateDir         string
+ 	config                  []string
+ 	configDir               []string
+ 	testWait                int
+@@ -140,6 +143,28 @@
+ 	return store, nil
+ }
+ 
++func (t *Telegraf) managedRun(ctx context.Context, notify func()) error {
++	return opsgrid.RunManaged(ctx, t.opsgridStateDir, func() {
++		_, _ = daemon.SdNotify(false, daemon.SdNotifyReady)
++		if notify != nil {
++			notify()
++		}
++	})
++}
++
++func (t *Telegraf) managedLoop(notify func()) error {
++	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
++	defer cancel()
++	go func() {
++		select {
++		case <-stop:
++			cancel()
++		case <-ctx.Done():
++		}
++	}()
++	return t.managedRun(ctx, notify)
++}
++
+ func (t *Telegraf) reloadLoop() error {
+ 	reloadConfig := false
+ 	reload := make(chan bool, 1)
+--- a/cmd/telegraf/telegraf_posix.go
++++ b/cmd/telegraf/telegraf_posix.go
+@@ -12,6 +12,9 @@
+ 	stop = make(chan struct{})
+ 	defer close(stop)
+ 
++	if t.opsgridManaged {
++		return t.managedLoop(nil)
++	}
+ 	cfg, err := t.loadConfiguration()
+ 	if err != nil {
+ 		return err
+--- a/cmd/telegraf/telegraf_windows.go
++++ b/cmd/telegraf/telegraf_windows.go
+@@ -5,6 +5,7 @@
+ package main
+ 
+ import (
++	"context"
+ 	"errors"
+ 	"fmt"
+ 	"log"
+@@ -41,12 +42,14 @@
+ 		switch t.service {
+ 		case "install":
+ 			cfg := &serviceConfig{
+-				displayName:  t.serviceDisplayName,
+-				restartDelay: t.serviceRestartDelay,
+-				autoRestart:  t.serviceAutoRestart,
+-				configs:      t.config,
+-				configDirs:   t.configDir,
+-				watchConfig:  t.watchConfig,
++				opsgridManaged:  t.opsgridManaged,
++				opsgridStateDir: t.opsgridStateDir,
++				displayName:     t.serviceDisplayName,
++				restartDelay:    t.serviceRestartDelay,
++				autoRestart:     t.serviceAutoRestart,
++				configs:         t.config,
++				configDirs:      t.configDir,
++				watchConfig:     t.watchConfig,
+ 			}
+ 			if err := installService(t.serviceName, cfg); err != nil {
+ 				return err
+@@ -88,6 +91,11 @@
+ 		return svc.Run(t.serviceName, t)
+ 	}
+ 
++	if t.opsgridManaged {
++		stop = make(chan struct{})
++		defer close(stop)
++		return t.managedLoop(nil)
++	}
+ 	// Load the configuration file(s)
+ 	cfg, err := t.loadConfiguration()
+ 	if err != nil {
+@@ -119,6 +127,9 @@
+ 	//nolint:errcheck // We have no way to route the error to the user so ignore it
+ 	svclog.Info(eventID, fmt.Sprintf("Starting Telegraf %s...", internal.Version))
+ 
++	if t.opsgridManaged {
++		return t.executeManaged(r, changes)
++	}
+ 	// Load the configuration file(s)
+ 	cfg, err := t.loadConfiguration()
+ 	if err != nil {
+@@ -179,10 +190,53 @@
+ 	}
+ }
+ 
++// SCM Running is sent only from the coordinator's real native-ready callback.
++// Stop/Shutdown cancels the same process and waits for complete native cleanup.
++func (t *Telegraf) executeManaged(r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	ready := make(chan struct{}, 1)
++	done := make(chan error, 1)
++	go func() {
++		done <- t.managedRun(ctx, func() {
++			select {
++			case ready <- struct{}{}:
++			default:
++			}
++		})
++	}()
++	stopping := false
++	for {
++		select {
++		case <-ready:
++			if !stopping {
++				changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
++			}
++		case err := <-done:
++			if err != nil {
++				log.Print("E! [opsgrid-agent] MANAGED_RUNTIME_FAILED")
++				return true, 3
++			}
++			return false, windows.NO_ERROR
++		case request := <-r:
++			switch request.Cmd {
++			case svc.Interrogate:
++				changes <- request.CurrentStatus
++			case svc.Stop, svc.Shutdown:
++				stopping = true
++				changes <- svc.Status{State: svc.StopPending}
++				cancel()
++			}
++		}
++	}
++}
++
+ type serviceConfig struct {
+-	displayName  string
+-	restartDelay string
+-	autoRestart  bool
++	opsgridManaged  bool
++	opsgridStateDir string
++	displayName     string
++	restartDelay    string
++	autoRestart     bool
+ 
+ 	// Telegraf parameters
+ 	configs     []string
+@@ -205,6 +259,12 @@
+ 
+ 	// Collect the command line arguments
+ 	args := make([]string, 0, 2*(len(cfg.configs)+len(cfg.configDirs))+2)
++	if cfg.opsgridManaged {
++		if cfg.opsgridStateDir == "" || !filepath.IsAbs(cfg.opsgridStateDir) || len(cfg.configs) != 0 || len(cfg.configDirs) != 0 || cfg.watchConfig != "" {
++			return errors.New("[opsgrid-agent] MANAGED_FLAG_CONFLICT")
++		}
++		args = append(args, "--opsgrid-managed", "--state-dir", cfg.opsgridStateDir)
++	}
+ 	for _, fn := range cfg.configs {
+ 		args = append(args, "--config", fn)
+ 	}
+--- a/cmd/telegraf/cmd_win_service.go
++++ b/cmd/telegraf/cmd_win_service.go
+@@ -87,10 +87,15 @@
+ 						},
+ 					},
+ 					Action: func(cCtx *cli.Context) error {
++						if err := validateManagedFlags(cCtx); err != nil {
++							return err
++						}
+ 						cfg := &serviceConfig{
+-							displayName:  cCtx.String("display-name"),
+-							restartDelay: cCtx.String("restart-delay"),
+-							autoRestart:  cCtx.Bool("auto-restart"),
++							opsgridManaged:  cCtx.Bool("opsgrid-managed"),
++							opsgridStateDir: cCtx.String("state-dir"),
++							displayName:     cCtx.String("display-name"),
++							restartDelay:    cCtx.String("restart-delay"),
++							autoRestart:     cCtx.Bool("auto-restart"),
+ 
+ 							configs:    cCtx.StringSlice("config"),
+ 							configDirs: cCtx.StringSlice("config-directory"),

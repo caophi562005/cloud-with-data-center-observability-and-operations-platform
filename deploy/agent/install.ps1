@@ -17,6 +17,7 @@ $script:OpsGridInstallerRoot = $PSScriptRoot
 . (Join-Path $script:OpsGridInstallerRoot 'lib/windows/Configuration.ps1')
 . (Join-Path $script:OpsGridInstallerRoot 'lib/windows/Transaction.ps1')
 . (Join-Path $script:OpsGridInstallerRoot 'lib/windows/Profiles.ps1')
+. (Join-Path $script:OpsGridInstallerRoot 'lib/windows/Telegraf.ps1')
 # OPSGRID_BUNDLE_END
 
 function Invoke-OpsGrid {
@@ -257,6 +258,11 @@ function Invoke-OpsGrid {
 # Normal invocation runs only after the early dot-source guard and executes the
 # complete preflight, enrollment, transaction, and service-health flow.
 if ($MyInvocation.InvocationName -ne '.') {
+    if ($script:OpsGridReleaseCollector -eq 'telegraf') {
+        $script:NativeExitCode = 0
+        Invoke-OpsGridTelegraf -Arguments @($args)
+        exit $script:NativeExitCode
+    }
     try { $parsedArguments = Get-OpsGridArguments -Arguments @($args) }
     catch { Write-OpsGridLog 'invalid installer arguments'; exit 10 }
     $Help = $parsedArguments.Help

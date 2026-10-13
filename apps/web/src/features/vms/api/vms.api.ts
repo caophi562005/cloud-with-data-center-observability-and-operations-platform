@@ -1,5 +1,5 @@
 import { apiFetch } from "../../../lib/api/http-client";
-import type { Vm, VmCurrentMetrics, VmMetricsRange, VmTimeRange } from "../vm.types";
+import type { Vm, VmAgentSummary, VmCurrentMetrics, VmMetricsRange, VmTelemetryMetadata, VmTimeRange } from "../vm.types";
 
 const JSON_HEADERS = {
   Accept: "application/json",
@@ -12,13 +12,9 @@ export interface VmApiTag {
   value: string;
 }
 
-export interface VmApiAgent {
-  status: "ACTIVE" | "REVOKED";
-  enrolledAt: string;
-  lastSeenAt: string | null;
-}
+export type VmApiAgent = VmAgentSummary;
 
-export interface VmApiRecord {
+export interface VmApiRecord extends Partial<VmTelemetryMetadata> {
   id: string;
   organizationId: string;
   hostname: string;
@@ -96,7 +92,15 @@ function toVm(response: VmApiRecord): Vm {
     tags,
     tagIds: Object.fromEntries(response.tags.map((tag) => [tag.key, tag.id])),
     agentStatus: response.agent?.status ?? null,
-    lastSeenAt: response.lastSeenAt !== undefined ? response.lastSeenAt : response.agent?.lastSeenAt ?? null,
+    agent: response.agent,
+    collectorType: response.collectorType !== undefined ? response.collectorType : response.agent?.collectorType ?? null,
+    collectorVersion: response.collectorVersion !== undefined ? response.collectorVersion : response.agent?.collectorVersion ?? null,
+    buildId: response.buildId !== undefined ? response.buildId : response.agent?.buildId ?? null,
+    telemetryCompatibility: response.telemetryCompatibility ?? "unknown",
+    telemetryDelivery: response.telemetryDelivery ?? "unknown",
+    hostState: response.hostState ?? "unknown",
+    lastControlContactAt: response.lastControlContactAt !== undefined ? response.lastControlContactAt : response.agent?.lastControlContactAt ?? null,
+    lastSeenAt: response.lastSeenAt ?? null,
     createdAt: response.createdAt,
     metrics: response.metrics ?? null,
     metricsState: response.metricsState,
@@ -166,11 +170,44 @@ export async function getVm(
 export async function issueVmEnrollmentToken(
   organizationId: string,
   vmId: string,
+  signal?: AbortSignal,
 ): Promise<VmEnrollmentToken> {
   return apiFetch<VmEnrollmentToken>(`${vmPath(organizationId, vmId)}/enrollment-token`, {
     method: "POST",
+    signal,
+    cache: "no-store",
     credentials: "include",
     headers: { Accept: "application/json" },
+  });
+}
+
+export interface OrganizationInstallCode {
+  id: string;
+  token: string;
+  expiresAt: string;
+  maxUses: 1;
+}
+
+function installCodesPath(organizationId: string): string {
+  return `/api/v1/organizations/${encodeURIComponent(organizationId)}/agent-install-codes`;
+}
+
+// Secret responses go directly to component-local state, never a query/mutation cache.
+export function issueOrganizationInstallCode(organizationId: string, signal?: AbortSignal): Promise<OrganizationInstallCode> {
+  return apiFetch<OrganizationInstallCode>(installCodesPath(organizationId), {
+    method: "POST", signal, cache: "no-store", headers: { Accept: "application/json" },
+  });
+}
+
+export function revokeOrganizationInstallCode(organizationId: string, id: string, signal?: AbortSignal): Promise<void> {
+  return apiFetch<void>(`${installCodesPath(organizationId)}/${encodeURIComponent(id)}`, {
+    method: "DELETE", signal, headers: { Accept: "application/json" },
+  });
+}
+
+export function revokeVmAgent(organizationId: string, vmId: string, signal?: AbortSignal): Promise<void> {
+  return apiFetch<void>(`${vmPath(organizationId, vmId)}/agent/revoke`, {
+    method: "POST", signal, headers: { Accept: "application/json" },
   });
 }
 

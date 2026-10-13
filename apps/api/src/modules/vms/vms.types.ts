@@ -1,4 +1,4 @@
-import type { AgentStatus, VmStatus } from '@prisma/client';
+import type { AgentCollectorType, AgentStatus, VmStatus } from '@prisma/client';
 
 export type TagFilter = {
   key: string;
@@ -22,6 +22,10 @@ export type AgentSummary = {
   status: AgentStatus;
   enrolledAt: Date;
   lastSeenAt: Date | null;
+  collectorType?: AgentCollectorType | null;
+  collectorVersion?: string | null;
+  buildId?: string | null;
+  lastControlContactAt?: Date | null;
 };
 
 export type VmRecord = {
@@ -61,6 +65,15 @@ export type AgentEnrollmentResponse = {
   vmId: string;
   credential: string;
   status: 'ACTIVE';
+  // Zero denotes the legacy VM-bound path with no managed native profile.
+  desiredVersion: number;
+};
+
+export type OrganizationInstallCodeResponse = {
+  id: string;
+  token: string;
+  expiresAt: Date;
+  maxUses: 1;
 };
 
 export type TokenSeed = {
@@ -89,23 +102,33 @@ export type VmMetricExpressions = {
   source: string;
   lastSeen: string;
 };
-export type VmMetricsState = 'available' | 'empty' | 'disabled' | 'unavailable';
-export type VmCurrentMetrics = {
+export type VmMetricsState = 'available' | 'empty' | 'disabled' | 'unavailable' | 'unsupported';
+export type VmTelemetryMetadata = {
+  collectorType: AgentCollectorType | null;
+  collectorVersion: string | null;
+  buildId: string | null;
+  telemetryCompatibility: 'native' | 'legacy' | 'unknown';
+  telemetryDelivery: 'fresh' | 'stale' | 'never-seen' | 'unknown' | 'unsupported';
+  hostState: VmStatus | 'unknown' | 'unsupported';
+  lastControlContactAt: string | null;
+};
+export type VmCurrentMetrics = VmTelemetryMetadata & {
   metricsCapabilities: VmMetricsCapabilities;
   sampledAt: string | null;
   lastSeenAt: string | null;
   status: VmStatus;
   metrics: VmMetrics;
-  metricsState: 'available' | 'empty';
+  metricsState: VmMetricsState;
 };
-export type EnrichedVmRecord = VmRecord & {
+export type EnrichedVmRecord = VmRecord & VmTelemetryMetadata & {
   metricsCapabilities: VmMetricsCapabilities;
   metrics: VmMetrics;
   lastSeenAt: string | null;
   metricsState: VmMetricsState;
 };
 export type VmMetricPoint = { timestamp: string; value: number | null };
-export type VmMetricsRange = {
+export type VmMetricsRange = VmTelemetryMetadata & {
+  metricsState: VmMetricsState;
   metricsCapabilities: VmMetricsCapabilities;
   from: string;
   to: string;
@@ -116,3 +139,4 @@ export type VmMetricsRange = {
   >;
 };
 export const DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS = 86_400;
+export const ORGANIZATION_INSTALL_CODE_TTL_SECONDS = 3_600;

@@ -30,11 +30,13 @@ source "${OPSGRID_INSTALLER_ROOT}/lib/linux/enrollment.sh"
 source "${OPSGRID_INSTALLER_ROOT}/lib/linux/configuration.sh"
 source "${OPSGRID_INSTALLER_ROOT}/lib/linux/transaction.sh"
 source "${OPSGRID_INSTALLER_ROOT}/lib/linux/reconciliation.sh"
+source "${OPSGRID_INSTALLER_ROOT}/lib/linux/telegraf.sh"
 # OPSGRID_BUNDLE_END
 
 trap cleanup EXIT
 
 main() {
+  if [[ "$OPSGRID_RELEASE_COLLECTOR" == telegraf ]]; then telegraf_main "$@"; return; fi
   parse_args "$@"
   if ((SHOW_HELP)); then
     usage

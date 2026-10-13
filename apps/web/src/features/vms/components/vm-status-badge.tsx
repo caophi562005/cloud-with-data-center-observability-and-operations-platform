@@ -1,17 +1,19 @@
 import { PixelBadge } from "@pxlkit/ui-kit";
 import type { IconName } from "../../../app/navigation/navigation.types";
 import { PxlKitIcon } from "../../../components/ui/pxlkit-icon";
-import type { VmStatus } from "../vm.types";
+import type { VmHostState } from "../vm.types";
 import { STATUS_LABELS, STATUS_TONES } from "../lib/vm-utils";
 
-const STATUS_ICONS: Record<VmStatus, IconName> = {
+const STATUS_ICONS: Record<VmHostState, IconName> = {
   HEALTHY: "check-circle",
   WARNING: "warning",
   CRITICAL: "error",
   DISCONNECTED: "close",
+  unknown: "cloud",
+  unsupported: "cloud",
 };
 
-export function VmStatusBadge({ status }: { status: VmStatus }) {
+export function VmStatusBadge({ status }: { status: VmHostState }) {
   return (
     <PixelBadge
       tone={STATUS_TONES[status]}

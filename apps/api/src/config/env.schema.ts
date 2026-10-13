@@ -30,6 +30,9 @@ const environmentKeys = [
   'DATABASE_URL',
   'REDIS_URL',
   'ENROLLMENT_TOKEN_CACHE_KEY',
+  'AGENT_API_PUBLIC_URL',
+  'AGENT_METRICS_WRITE_URL',
+  'AGENT_MONITORING_SECRET_KEY',
   'COGNITO_REGION',
   'COGNITO_USER_POOL_ID',
   'COGNITO_CLIENT_ID',
@@ -75,6 +78,23 @@ const metricsQueryUrl = z.url().refine((value) => {
   }
 }, 'METRICS_QUERY_URL must be an HTTPS base URL without credentials, query or fragment (HTTP allowed only on loopback)');
 
+const agentHttpsUrl = z.url().refine((value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password &&
+      !/[?#\x00-\x20\x7f$]/.test(value) && !/%24/i.test(value) && !url.pathname.includes('@');
+  } catch {
+    return false;
+  }
+}, 'Agent endpoints must use HTTPS without credentials, query, fragment or environment expansion');
+const agentApiOrigin = agentHttpsUrl.refine((value) => {
+  try {
+    return new URL(value).pathname === '/';
+  } catch {
+    return false;
+  }
+}, 'AGENT_API_PUBLIC_URL must be an HTTPS origin without a path');
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']),
@@ -95,6 +115,11 @@ export const envSchema = z
         'ENROLLMENT_TOKEN_CACHE_KEY must be a 32-byte hex key',
       )
       .optional(),
+    // Optional at legacy startup; monitoring operations assert all three before use.
+    AGENT_API_PUBLIC_URL: agentApiOrigin.optional(),
+    AGENT_METRICS_WRITE_URL: agentHttpsUrl.optional(),
+    AGENT_MONITORING_SECRET_KEY: z.string().regex(/^[a-fA-F0-9]{64}$/,
+      'AGENT_MONITORING_SECRET_KEY must be a 32-byte hex key').optional(),
     COGNITO_REGION: z
       .string()
       .min(1)

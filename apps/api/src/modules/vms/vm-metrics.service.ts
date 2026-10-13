@@ -21,8 +21,6 @@ import {
   VM_HEALTH_POLICY,
 } from './vm-health.js';
 import {
-  buildLinuxVmExpressions,
-  CURRENT_METRICS,
   RANGE_METRICS,
   type VmMetricBinding,
   type CurrentMetric,
@@ -42,7 +40,8 @@ import type {
 } from './vms.types.js';
 import { buildWindowsVmExpressions } from './vm-metrics.windows.promql.js';
 import { getVmMetricsCapabilities, resolveVmMetricPlatform } from './vm-metrics-capabilities.js';
-import type { VmMetricExpressions } from './vms.types.js';
+import type { VmMetricExpressions, VmTelemetryMetadata } from './vms.types.js';
+import { buildTelegrafVmExpressions, nativeTelemetryActive, telemetryCompatibility, TELEGRAF_CONTRACT_VERSION } from './vm-metrics.telegraf-contract.js';
 interface CurrentData {
   values: MetricVector[];
   sources: MetricVector[];
@@ -52,8 +51,6 @@ interface CacheEntry {
   until: number;
   value: unknown;
 }
-const isActive = (vm: VmRecord) =>
-  vm.agent?.status === 'ACTIVE' && Boolean(vm.agent.id);
 function matches(
   labels: Record<string, string>,
   org: string,
@@ -89,18 +86,7 @@ function sourceTime(
         n <= now &&
         now - n <= 604800,
     );
-  return values.length ? Math.max(...values) : null;
-}
-function latestSourceTime(
-  rows: MetricVector[],
-  org: string,
-  binding: VmMetricBinding,
-  now: number,
-): number | null {
-  const times = [...CURRENT_METRICS, 'heartbeat']
-    .map((name) => sourceTime(rows, org, binding, name, now))
-    .filter((time): time is number => time !== null);
-  return times.length ? Math.max(...times) : null;
+  return values.length === 1 ? values[0] : null;
 }
 function iso(seconds: number | null): string | null {
   return seconds === null ? null : new Date(seconds * 1000).toISOString();
@@ -110,9 +96,7 @@ function normalizeValue(
   value: number | null,
 ): number | null {
   if (value === null || !Number.isFinite(value) || value < 0) return null;
-  return ['cpu', 'memory', 'disk'].includes(name)
-    ? Math.min(100, value)
-    : value;
+  return ['cpu', 'memory', 'disk'].includes(name) && value > 100 ? null : value;
 }
 
 @Injectable()
@@ -134,9 +118,8 @@ export class VmMetricsService {
     vmId: string,
   ): Promise<VmCurrentMetrics> {
     const vm = await this.authorizedVm(organizationId, vmId);
-    if (!isActive(vm)) return this.empty(vm);
+    if (!nativeTelemetryActive(vm)) return this.empty(vm);
     this.provider.assertEnabled();
-    if (resolveVmMetricPlatform(vm.os) === 'unknown') return this.empty(vm);
     return this.materialize(
       organizationId,
       vm,
@@ -152,8 +135,13 @@ export class VmMetricsService {
     const parsed = vmMetricsQuerySchema.parse(query);
     // Presets align to their evaluation step; explicit bounds and query arguments remain exact.
     const window = resolveMetricsWindow(parsed, Date.now() / 1000);
+    const current = nativeTelemetryActive(vm)
+      ? this.materialize(organizationId, vm, await this.loadCurrent(organizationId, [vm]))
+      : this.empty(vm);
     const result: VmMetricsRange = {
-      metricsCapabilities: getVmMetricsCapabilities(resolveVmMetricPlatform(vm.os)),
+      ...this.metadata(vm, current.telemetryDelivery, current.hostState),
+      metricsState: current.metricsState,
+      metricsCapabilities: current.metricsCapabilities,
       from: iso(window.from)!,
       to: iso(window.to)!,
       step: window.step,
@@ -166,7 +154,7 @@ export class VmMetricsService {
         load: [],
       },
     };
-    if (!isActive(vm)) return result;
+    if (!nativeTelemetryActive(vm)) return result;
     this.provider.assertEnabled();
     const binding = bindingFor(vm);
     if (binding.platform === 'unknown') return result;
@@ -255,7 +243,7 @@ export class VmMetricsService {
         return { ...result.series, ...Object.fromEntries(data) } as VmMetricsRange['series'];
       },
     );
-    return { ...result, series };
+    return { ...result, series, metricsState: Object.values(series).some((points) => points.some((point) => point.value !== null)) ? 'available' : 'empty' };
   }
   async enrichPage(
     organizationId: string,
@@ -266,14 +254,14 @@ export class VmMetricsService {
       records.length > 100
     )
       throw new ApplicationNotFoundError('RESOURCE_NOT_FOUND', 'VM not found');
-    const active = records.filter(isActive);
+    const active = records.filter(nativeTelemetryActive);
     try {
       const data = active.length
         ? await this.loadCurrent(organizationId, active)
         : null;
       return records.map((vm) => ({
         ...vm,
-        ...(data && isActive(vm)
+        ...(data && nativeTelemetryActive(vm)
           ? this.materialize(organizationId, vm, data)
           : this.empty(vm)),
       }));
@@ -283,12 +271,10 @@ export class VmMetricsService {
         (error.getResponse() as { code?: string }).code === 'METRICS_DISABLED';
       return records.map((vm) => ({
         ...vm,
-        ...this.empty(vm),
-        metricsState: isActive(vm)
-          ? disabled
-            ? 'disabled'
-            : 'unavailable'
-          : 'empty',
+        ...this.empty(vm, nativeTelemetryActive(vm) ? 'unknown' : undefined),
+        metricsState: nativeTelemetryActive(vm)
+          ? disabled ? 'disabled' : 'unavailable'
+          : telemetryCompatibility(vm) === 'native' ? 'empty' : 'unsupported',
       }));
     }
   }
@@ -306,7 +292,7 @@ export class VmMetricsService {
     records: VmRecord[],
   ): Promise<CurrentData> {
     this.provider.assertEnabled();
-    const bindings = records.map(bindingFor).filter((binding) => binding.platform !== 'unknown');
+    const bindings = records.filter(nativeTelemetryActive).map(bindingFor);
     if (!bindings.length) return { values: [], sources: [], history: [] };
     return this.cached(this.key('current', org, records), async () => {
       const profiles = this.profiles(org, bindings);
@@ -317,7 +303,7 @@ export class VmMetricsService {
       ]);
       const now = Date.now() / 1000;
       const missing = bindings.filter(
-        (binding) => latestSourceTime(sources, org, binding, now) === null,
+        (binding) => sourceTime(sources, org, binding, 'heartbeat', now) === null,
       );
       const history = missing.length
         ? await this.query(() =>
@@ -331,7 +317,7 @@ export class VmMetricsService {
     const linux = bindings.filter((binding) => binding.platform === 'linux');
     const windows = bindings.filter((binding) => binding.platform === 'windows');
     return [
-      ...(linux.length ? [buildLinuxVmExpressions(org, linux)] : []),
+      ...(linux.length ? [buildTelegrafVmExpressions(org, linux, 'linux', this.policy.staleSeconds)] : []),
       ...(windows.length ? [buildWindowsVmExpressions(org, windows, this.policy.staleSeconds)] : []),
     ];
   }
@@ -342,9 +328,9 @@ export class VmMetricsService {
   ): VmCurrentMetrics {
     const now = Date.now() / 1000;
     const binding = bindingFor(vm);
-    if (binding.platform === 'unknown') return this.empty(vm);
+    if (!nativeTelemetryActive(vm)) return this.empty(vm);
     const metricsCapabilities = getVmMetricsCapabilities(binding.platform);
-    const heartbeat = latestSourceTime(data.sources, org, binding, now);
+    const heartbeat = sourceTime(data.sources, org, binding, 'heartbeat', now);
     const history = sourceTime(data.history, org, binding, 'heartbeat', now);
     const lastSeen =
       heartbeat === null
@@ -370,31 +356,46 @@ export class VmMetricsService {
     const metricsState = Object.values(metrics).some((n) => n !== null)
       ? 'available'
       : 'empty';
+    const hostState = deriveVmHealth(metrics, true, heartbeat, now, this.policy);
     return {
+      ...this.metadata(vm, fresh ? 'fresh' : lastSeen === null ? 'never-seen' : 'stale', hostState),
       metricsCapabilities,
       sampledAt: iso(fresh ? heartbeat : null),
       lastSeenAt: iso(lastSeen),
-      status: deriveVmHealth(
-        metrics,
-        isActive(vm),
-        heartbeat,
-        now,
-        this.policy,
-      ),
+      // Retain the four-value inventory enum for old clients. New clients MUST
+      // use hostState; stored inventory health is not evidence for neutral states.
+      status: hostState === 'unknown' ? vm.status : hostState,
       metrics,
       metricsState,
     };
   }
-  private empty(vm: VmRecord): VmCurrentMetrics {
-    const platform = resolveVmMetricPlatform(vm.os);
-    const stored = platform === 'unknown' && isActive(vm) ? vm.agent?.lastSeenAt : null;
+  private metadata(
+    vm: VmRecord,
+    telemetryDelivery: VmTelemetryMetadata['telemetryDelivery'],
+    hostState: VmTelemetryMetadata['hostState'],
+  ): VmTelemetryMetadata {
+    const contact = vm.agent?.lastControlContactAt;
     return {
-      metricsCapabilities: getVmMetricsCapabilities(platform),
+      collectorType: vm.agent?.collectorType ?? null,
+      collectorVersion: vm.agent?.collectorVersion ?? null,
+      buildId: vm.agent?.buildId ?? null,
+      telemetryCompatibility: telemetryCompatibility(vm),
+      telemetryDelivery,
+      hostState,
+      lastControlContactAt: contact && Number.isFinite(contact.getTime()) && contact.getTime() <= Date.now()
+        ? contact.toISOString() : null,
+    };
+  }
+  private empty(vm: VmRecord, delivery?: VmTelemetryMetadata['telemetryDelivery']): VmCurrentMetrics {
+    const native = telemetryCompatibility(vm) === 'native';
+    return {
+      ...this.metadata(vm, delivery ?? (native ? 'unknown' : 'unsupported'), native ? 'unknown' : 'unsupported'),
+      metricsCapabilities: getVmMetricsCapabilities(native ? resolveVmMetricPlatform(vm.os) : 'unknown'),
       sampledAt: null,
-      lastSeenAt: stored && Number.isFinite(stored.getTime()) ? stored.toISOString() : null,
-      status: 'DISCONNECTED',
+      lastSeenAt: null,
+      status: vm.status,
       metrics: emptyVmMetrics(),
-      metricsState: 'empty',
+      metricsState: native ? 'empty' : 'unsupported',
     };
   }
   private key(
@@ -405,9 +406,11 @@ export class VmMetricsService {
   ): string {
     return JSON.stringify([
       kind,
+      TELEGRAF_CONTRACT_VERSION,
+      this.policy.staleSeconds,
       org,
       records
-        .map((vm) => [vm.id, vm.agent?.id, vm.agent?.status, resolveVmMetricPlatform(vm.os)])
+        .map((vm) => [vm.id, vm.agent?.id, vm.agent?.status, vm.agent?.collectorType, vm.agent?.collectorVersion, vm.agent?.buildId, resolveVmMetricPlatform(vm.os)])
         .sort(([a], [b]) => String(a).localeCompare(String(b))),
       window,
     ]);

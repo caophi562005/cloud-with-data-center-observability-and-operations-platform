@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "telegraf-native-v1",
+  "upstreamCommit": "26b8f4478b676f4f5e5d8ce1622cdf4f6c273bda",
+  "evidence": {
+    "status": "source-derived",
+    "sourceBase": "https://github.com/influxdata/telegraf/blob/26b8f4478b676f4f5e5d8ce1622cdf4f6c273bda/",
+    "runtimeVerification": { "linux-amd64": "unverified", "linux-arm64": "unverified", "windows-amd64": "unverified" },
+    "limits": [
+      "No real serialized receiver fixture or platform collection evidence yet; source evidence is not runtime verification.",
+      "Internal delivery independence from integration gather errors still requires real receiver evidence.",
+      "Windows native CPU, available RAM, eligible disk pair, net and uptime require platform validation; win_perf_counters is available but no counter metric is claimed verified.",
+      "Five service names and numeric fields are source-derived; actual availability depends on server versions, privileges and connectivity."
+    ]
+  },
+  "transport": {
+    "serializer": "prometheusremotewrite",
+    "protobuf": "prometheus.prompb.WriteRequest",
+    "compression": "block-snappy-once",
+    "sampleType": "float64",
+    "timestampUnit": "unix-milliseconds",
+    "metricNameRule": "measurement + '_' + field; sanitized; no implicit _total or unit suffix",
+    "metadata": "Remote Write v1 samples do not carry Telegraf gauge/counter/untyped distinctions; semantic types below must be retained by consumers.",
+    "requiredHttpConfiguration": {
+      "method": "POST",
+      "data_format": "prometheusremotewrite",
+      "use_batch_format": true,
+      "content_encoding": "identity",
+      "prometheus_string_as_label": false,
+      "headers": { "Content-Type": "application/x-protobuf", "Content-Encoding": "snappy", "X-Prometheus-Remote-Write-Version": "0.1.0" }
+    },
+    "notes": "Serializer owns compression. HTTP headers above must be rendered explicitly; do not enable additional HTTP snappy compression. Authorization Bearer AGT must be bound from the local credential through config.Secret in memory; this descriptor contains no credential or identity values.",
+    "source": ["plugins/serializers/prometheus/convert.go:147-164", "plugins/serializers/prometheusremotewrite/prometheusremotewrite.go:67-86", "plugins/serializers/prometheusremotewrite/prometheusremotewrite.go:254-258", "plugins/serializers/prometheusremotewrite/prometheusremotewrite.go:393-399"]
+  },
+  "identity": {
+    "gatewayTrustedLabels": ["vm_id", "organization_id", "agent_id"],
+    "serviceInstanceLabel": "integration_instance_id",
+    "serviceInstanceRule": "Renderer supplies stable DB integration-instance identifier through input tags for every service block; upstream plugins do not generate it. Preserve across edits, reject missing IDs, never derive from endpoint or password.",
+    "dropCommonTags": ["host"],
+    "tagPolicy": "Retain only per-family allowlists plus authenticated gateway labels; omit endpoint/credential-bearing and high-churn tags. Descriptor policies require later renderer implementation."
+  },
+  "host": {
+    "cpu": {
+      "measurement": "cpu", "fields": { "usage_idle": { "name": "cpu_usage_idle", "fieldType": "float64", "telegrafType": "gauge", "semanticType": "gauge", "unit": "percent" } },
+      "config": { "percpu": false, "totalcpu": true, "collect_cpu_time": false, "report_active": false, "core_tags": false, "fieldpass": ["usage_idle"], "taginclude": ["cpu"] },
+      "tags": { "cpu": "cpu-total" },
+      "semantics": "Host used CPU percent = 100 - aggregate idle percent; first gather has no usage sample; skip zero delta. Do not sum per-core percentages.",
+      "source": ["plugins/inputs/cpu/cpu.go:59-69", "plugins/inputs/cpu/cpu.go:100-138", "plugins/common/psutil/ps.go:67", "go.mod:200"],
+      "dependencyEvidence": ["https://github.com/shirou/gopsutil/blob/v4.26.8/cpu/cpu_linux.go#L364", "https://github.com/shirou/gopsutil/blob/v4.26.8/cpu/cpu_windows.go#L156"]
+    },
+    "memory": {
+      "measurement": "mem", "fields": {
+        "available": { "name": "mem_available", "fieldType": "uint64", "telegrafType": "gauge", "semanticType": "gauge", "unit": "bytes" },
+        "total": { "name": "mem_total", "fieldType": "uint64", "telegrafType": "gauge", "semanticType": "gauge", "unit": "bytes" }
+      },
+      "config": { "collect_extended": false, "fieldpass": ["available", "total"], "tagexclude": ["*"] },
+      "tags": [], "semantics": "Available RAM, not merely free RAM; used fraction = 1 - available / total, only when total > 0.",
+      "source": ["plugins/inputs/mem/mem.go:39-51", "plugins/inputs/mem/mem.go:114"]
+    },
+    "disk": {
+      "measurement": "disk", "fields": {
+        "free": { "name": "disk_free", "fieldType": "uint64", "telegrafType": "gauge", "semanticType": "available-space", "unit": "bytes" },
+        "total": { "name": "disk_total", "fieldType": "uint64", "telegrafType": "gauge", "semanticType": "gauge", "unit": "bytes" }
+      },
+      "config": { "fieldpass": ["free", "total"], "taginclude": ["path", "device", "fstype", "mode"] },
+      "tags": ["path", "device", "fstype", "mode"],
+      "dropTags": ["label"],
+      "semantics": "Available-space utilization = 100 * (1 - free / total), matched on identical eligible volume labels with total > 0; select worst eligible volume, never aggregate free/total across volumes. On Unix, free uses Bavail while used uses Blocks-Bfree: used/total understates reserved/unavailable space and cannot replace this pair. Upstream used_percent (used/(used+free)) is also not this formula. Later platform profile must exclude pseudo/temporary/duplicate mounts; Windows available-space behavior remains runtime-unverified.",
+      "eligibilityRuntimeVerified": false,
+      "source": ["plugins/inputs/disk/disk.go:41-91"],
+      "dependencyEvidence": ["https://github.com/shirou/gopsutil/blob/v4.26.8/disk/disk_unix.go#L17-L38"]
+    },
+    "network": {
+      "measurement": "net", "fields": {
+        "bytes_recv": { "name": "net_bytes_recv", "fieldType": "uint64", "telegrafType": "counter", "semanticType": "counter", "unit": "bytes" },
+        "bytes_sent": { "name": "net_bytes_sent", "fieldType": "uint64", "telegrafType": "counter", "semanticType": "counter", "unit": "bytes" }
+      },
+      "config": { "fieldpass": ["bytes_recv", "bytes_sent"], "taginclude": ["interface"] },
+      "tags": ["interface"], "semantics": "Rate separately by interface, accounting for reset; exclude loopback/duplicate virtual paths in later platform profile.",
+      "source": ["plugins/inputs/net/net.go:92-107"]
+    },
+    "uptime": {
+      "measurement": "system", "fields": { "uptime": { "name": "system_uptime", "fieldType": "uint64", "telegrafType": "untyped", "semanticType": "host-uptime", "unit": "seconds" } },
+      "config": { "include": ["uptime"], "fieldpass": ["uptime"], "tagexclude": ["*"] },
+      "tags": [], "semantics": "Host uptime from host.Uptime(), never agent process age. Explicit include=[uptime] uses AddFields/untyped, unlike legacy mode's AddCounter. No load averages required or fabricated on Windows.",
+      "source": ["plugins/inputs/system/system.go:144-157"]
+    },
+    "load": {
+      "supportedOs": ["linux"],
+      "measurement": "system", "fields": { "load1": { "name": "system_load1", "fieldType": "float64", "telegrafType": "untyped", "semanticType": "gauge", "unit": "dimensionless" } },
+      "config": { "include": ["load", "uptime"], "fieldpass": ["load1", "uptime"], "tagexclude": ["*"] },
+      "tags": [], "semantics": "Linux system profile combines load1 and host uptime in one native input; this OS-specific config supersedes the uptime-only config on Linux. Windows retains include=[uptime] and never fabricates load. Load is a dimensionless gauge, never a rate.",
+      "runtimeVerification": "unverified",
+      "source": ["plugins/inputs/system/system.go:55", "plugins/inputs/system/system.go:116", "plugins/inputs/system/system.go:144-158"]
+    }
+  },
+  "delivery": {
+    "measurement": "internal_agent", "fields": { "metrics_gathered": { "name": "internal_agent_metrics_gathered", "fieldType": "int64", "telegrafType": "untyped", "semanticType": "counter", "unit": "metrics" } },
+    "config": { "collect_memstats": false, "collect_gostats": false, "per_instance": false, "namepass": ["internal_agent"], "fieldpass": ["metrics_gathered"], "tagexclude": ["*"] },
+    "tags": [], "dropTags": ["version", "go_version", "_id"],
+    "semantics": "Numeric internal family with gather-time sample timestamp from selfstat.Metrics(), which calls time.Now() internally; freshness follows delivery even if counter value does not change. Independent input registration exists in source; gather-error receiver proof remains unverified. Not a replacement for authenticated heartbeat or host uptime.",
+    "source": ["models/running_input.go:15", "selfstat/selfstat.go:85-104", "metric/metric.go:23-35", "plugins/inputs/internal/internal.go:33-38", "plugins/inputs/internal/internal.go:61-86"]
+  },
+  "services": {
+    "redis": {
+      "measurement": "redis", "fields": {
+        "clients": { "name": "redis_clients", "fieldType": "int64", "telegrafType": "untyped", "semanticType": "gauge", "unit": "connections" },
+        "used_memory": { "name": "redis_used_memory", "fieldType": "int64", "telegrafType": "untyped", "semanticType": "gauge", "unit": "bytes" }
+      },
+      "fieldpass": ["clients", "used_memory"], "namepass": ["redis"], "taginclude": ["integration_instance_id"],
+      "nativeTags": ["server", "port", "socket", "replication_role"],
+      "requiredTags": ["integration_instance_id"],
+      "source": ["plugins/inputs/redis/redis.go:31-32", "plugins/inputs/redis/redis.go:291-297", "plugins/inputs/redis/redis.go:450-491"]
+    },
+    "postgresql": {
+      "measurement": "postgresql", "fields": { "numbackends": { "name": "postgresql_numbackends", "fieldType": "SQL integer normalized to int64; server column dependent", "telegrafType": "untyped", "semanticType": "gauge", "unit": "connections" } },
+      "fieldpass": ["numbackends"], "namepass": ["postgresql"], "taginclude": ["integration_instance_id", "db"],
+      "nativeTags": ["server", "db"], "requiredTags": ["integration_instance_id", "db"],
+      "semantics": "One row per pg_stat_database; numbackends is server-provided column. Database label must remain to avoid colliding series; sanitized server address is dropped.",
+      "source": ["plugins/inputs/postgresql/postgresql.go:53", "plugins/inputs/postgresql/postgresql.go:109-151"]
+    },
+    "mysql": {
+      "measurement": "mysql", "fields": { "threads_connected": { "name": "mysql_threads_connected", "fieldType": "int64 for integer global-status value", "telegrafType": "untyped", "semanticType": "gauge", "unit": "connections" } },
+      "config": { "metric_version": 2 }, "fieldpass": ["threads_connected"], "namepass": ["mysql"], "taginclude": ["integration_instance_id"],
+      "nativeTags": ["server"], "requiredTags": ["integration_instance_id"],
+      "semantics": "Metric version 2 lowercases SHOW GLOBAL STATUS names, unlike legacy prefix mappings; numeric conversion follows server value.",
+      "source": ["plugins/inputs/mysql/mysql.go:773-783", "plugins/inputs/mysql/mysql.go:873-892", "plugins/inputs/mysql/v2/convert.go:161-178", "plugins/inputs/mysql/v2/convert.go:242-251"]
+    },
+    "nginx": {
+      "measurement": "nginx", "fields": { "active": { "name": "nginx_active", "fieldType": "uint64", "telegrafType": "untyped", "semanticType": "gauge", "unit": "connections" } },
+      "fieldpass": ["active"], "namepass": ["nginx"], "taginclude": ["integration_instance_id"],
+      "nativeTags": ["server", "port"], "requiredTags": ["integration_instance_id"],
+      "source": ["plugins/inputs/nginx/nginx.go:153-182"]
+    },
+    "docker": {
+      "measurement": "docker", "fields": { "n_containers_running": { "name": "docker_n_containers_running", "fieldType": "int normalized to int64", "telegrafType": "untyped", "semanticType": "gauge", "unit": "containers" } },
+      "fieldpass": ["n_containers_running"], "namepass": ["docker"], "taginclude": ["integration_instance_id"],
+      "nativeTags": ["engine_host", "server_version"], "requiredTags": ["integration_instance_id"],
+      "semantics": "Engine-info numeric metric only; exclude container IDs, images, labels and names from this core allowlist.",
+      "source": ["plugins/inputs/docker/gatherers.go:24-56"]
+    }
+  },
+  "deferred": ["actual transport fixture", "Linux and Windows runtime platform evidence", "exact platform eligible-volume/interface policy", "internal gather-error freshness proof", "custom lifecycle overlay verification", "optional diskio profile fields"]
+}

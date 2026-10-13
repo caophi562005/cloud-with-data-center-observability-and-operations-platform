@@ -15,12 +15,26 @@ export class AgentEnrollmentService {
   ) {}
 
   async enroll(input: EnrollmentInput): Promise<AgentEnrollmentResponse> {
+    if (!/^ENR_[A-Za-z0-9_-]{43}$/.test(input.token)) {
+      throw new ApplicationUnauthorizedError(
+        'ENROLLMENT_TOKEN_INVALID',
+        'Enrollment token is invalid or expired',
+      );
+    }
     const tokenHash = this.secretService.hash(input.token);
     const generatedCredential = this.secretService.generate('AGT_');
     const result = await this.enrollmentRepository.consumeAndEnroll({
       tokenHash,
       credentialHash: generatedCredential.hash,
       ...(input.os === undefined ? {} : { os: input.os }),
+      ...(input.hostname === undefined ? {} : { hostname: input.hostname }),
+      ...(input.collectorType === undefined
+        ? {}
+        : { collectorType: input.collectorType }),
+      ...(input.collectorVersion === undefined
+        ? {}
+        : { collectorVersion: input.collectorVersion }),
+      ...(input.buildId === undefined ? {} : { buildId: input.buildId }),
       now: new Date(),
     });
 
@@ -42,6 +56,7 @@ export class AgentEnrollmentService {
       vmId: result.vmId,
       credential: generatedCredential.value,
       status: 'ACTIVE',
+      desiredVersion: result.desiredVersion,
     };
   }
 }

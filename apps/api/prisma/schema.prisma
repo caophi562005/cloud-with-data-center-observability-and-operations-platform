@@ -24,6 +24,16 @@ enum AgentStatus {
   REVOKED
 }
 
+enum AgentCollectorType {
+  ALLOY
+  TELEGRAF
+}
+
+enum EnrollmentTokenScope {
+  VM
+  ORGANIZATION
+}
+
 enum EnrollmentTokenStatus {
   ACTIVE
   CONSUMED
@@ -56,6 +66,7 @@ model Organization {
   vmTags            VmTag[]
   agents            Agent[]
   enrollmentTokens  EnrollmentToken[]
+  monitoringConfigs VmMonitoringConfig[]
 }
 
 model Vm {
@@ -72,6 +83,7 @@ model Vm {
   agent             Agent?
   enrollmentTokens  EnrollmentToken[]
   alerts            Alert[]
+  monitoringConfig  VmMonitoringConfig?
 
   @@unique([organizationId, id])
   @@unique([organizationId, hostname])
@@ -115,6 +127,15 @@ model Agent {
   enrolledAt     DateTime
   lastSeenAt     DateTime?
   revokedAt      DateTime?
+  collectorType         AgentCollectorType?
+  collectorVersion      String? @db.VarChar(128)
+  buildId               String? @db.VarChar(128)
+  appliedConfigVersion  Int?
+  appliedConfigHash     String? @db.VarChar(64)
+  appliedConfigAt       DateTime?
+  rejectedConfigVersion Int?
+  rejectedConfigError   String?
+  lastControlContactAt  DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -127,7 +148,8 @@ model Agent {
 model EnrollmentToken {
   id             String                @id @default(uuid()) @db.Uuid
   organizationId String                @db.Uuid
-  vmId           String                @db.Uuid
+  scope          EnrollmentTokenScope @default(VM)
+  vmId           String?               @db.Uuid
   tokenHash      String                @unique
   status         EnrollmentTokenStatus
   expiresAt      DateTime
@@ -135,9 +157,26 @@ model EnrollmentToken {
   revokedAt      DateTime?
   createdAt      DateTime              @default(now())
   organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  vm             Vm                    @relation(fields: [vmId], references: [id], onDelete: Cascade)
+  vm             Vm?                   @relation(fields: [vmId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, vmId, status, expiresAt])
+  @@index([organizationId, scope, status, expiresAt])
+}
+
+model VmMonitoringConfig {
+  vmId              String       @id @db.Uuid
+  organizationId    String       @db.Uuid
+  version           Int
+  schemaVersion     Int
+  profileKey        String
+  definition        Json
+  secretsCiphertext String?
+  updatedAt         DateTime     @updatedAt
+  vm                Vm           @relation(fields: [organizationId, vmId], references: [organizationId, id], onDelete: Cascade)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, vmId])
+  @@index([organizationId])
 }
 
 model Membership {

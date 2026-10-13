@@ -1,5 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { AgentStatus, EnrollmentTokenStatus, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  AgentCollectorType,
+  AgentStatus,
+  EnrollmentTokenScope,
+  EnrollmentTokenStatus,
+  Prisma,
+} from '@prisma/client';
 import {
   ApplicationConflictError,
   hasPrismaErrorCode,
@@ -7,8 +13,16 @@ import {
 import { PrismaService } from '../../infrastructure/database/prisma/prisma.service.js';
 import {
   DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS,
+  ORGANIZATION_INSTALL_CODE_TTL_SECONDS,
   type TokenSeed,
 } from './vms.types.js';
+
+import { initialMonitoringDefinition } from './monitoring/monitoring.types.js';
+import {
+  organizationEnrollmentMetadataSchema,
+  telegrafEnrollmentMetadataSchema,
+  type EnrollmentInput,
+} from './schemas/enrollment.schema.js';
 
 @Injectable()
 export class EnrollmentRepository {
@@ -122,19 +136,67 @@ export class EnrollmentRepository {
     });
   }
 
-  async consumeAndEnroll(input: {
-    tokenHash: string;
-    credentialHash: string;
-    os?: string;
-    now: Date;
-  }): Promise<{
+  async issueOrganizationToken(
+    organizationId: string,
+    tokenHash: string,
+    now: Date,
+  ): Promise<{ id: string; expiresAt: Date }> {
+    return this.prisma.enrollmentToken.create({
+      data: {
+        organizationId,
+        scope: EnrollmentTokenScope.ORGANIZATION,
+        status: EnrollmentTokenStatus.ACTIVE,
+        vmId: null,
+        tokenHash,
+        expiresAt: new Date(
+          now.getTime() + ORGANIZATION_INSTALL_CODE_TTL_SECONDS * 1000,
+        ),
+      },
+      select: { id: true, expiresAt: true },
+    });
+  }
+
+  async revokeOrganizationToken(
+    organizationId: string,
+    tokenId: string,
+  ): Promise<void> {
+    // Scoped update waits for a concurrent consume's row lock. Never revoke a
+    // VM recovery token or mutate a consumed code, even when its ID is known.
+    const result = await this.prisma.enrollmentToken.updateMany({
+      where: {
+        id: tokenId,
+        organizationId,
+        scope: EnrollmentTokenScope.ORGANIZATION,
+        status: EnrollmentTokenStatus.ACTIVE,
+      },
+      data: { status: EnrollmentTokenStatus.REVOKED, revokedAt: new Date() },
+    });
+    if (result.count === 0) {
+      const token = await this.prisma.enrollmentToken.findFirst({
+        where: {
+          id: tokenId,
+          organizationId,
+          scope: EnrollmentTokenScope.ORGANIZATION,
+        },
+        select: { id: true },
+      });
+      if (!token) throw prismaNotFoundError('Install code not found');
+    }
+  }
+
+  async consumeAndEnroll(
+    input: Omit<EnrollmentInput, 'token'> & {
+      tokenHash: string;
+      credentialHash: string;
+      now: Date;
+    },
+  ): Promise<{
     agentId: string;
     organizationId: string;
     vmId: string;
+    desiredVersion: number;
   } | null> {
-    if (!SHA256_HEX_PATTERN.test(input.tokenHash)) {
-      return null;
-    }
+    if (!SHA256_HEX_PATTERN.test(input.tokenHash)) return null;
 
     for (let attempt = 0; attempt < MAX_CONSUME_RETRIES; attempt += 1) {
       try {
@@ -142,52 +204,116 @@ export class EnrollmentRepository {
           async (transaction) => {
             const tokenRows = await transaction.$queryRaw<
               EnrollmentTokenLockRow[]
-            >(
-              Prisma.sql`
-            SELECT "id", "organizationId", "vmId", "status", "expiresAt"
-            FROM "EnrollmentToken"
-            WHERE "tokenHash" = ${input.tokenHash}
-            FOR UPDATE
-          `,
-            );
+            >(Prisma.sql`
+            SELECT "id", "organizationId", "vmId", "scope", "status", "expiresAt"
+            FROM "EnrollmentToken" WHERE "tokenHash" = ${input.tokenHash} FOR UPDATE
+          `);
             const token = tokenRows[0];
+            // Evaluate fresh time only AFTER acquiring the lock, including retries.
             if (
               !token ||
               token.status !== EnrollmentTokenStatus.ACTIVE ||
-              token.expiresAt <= input.now
+              token.expiresAt <= new Date()
             ) {
               return null;
             }
 
-            const lockedVm = await transaction.$queryRaw<{ id: string }[]>(
-              Prisma.sql`
-            SELECT "id"
-            FROM "Vm"
-            WHERE "id" = ${token.vmId}
-              AND "organizationId" = ${token.organizationId}
-            FOR UPDATE
-          `,
-            );
-            if (lockedVm.length === 0) {
+            const bootstrap = token.scope === EnrollmentTokenScope.ORGANIZATION;
+            if (
+              (bootstrap && token.vmId !== null) ||
+              (!bootstrap &&
+                (token.scope !== EnrollmentTokenScope.VM || !token.vmId))
+            ) {
               return null;
             }
-
-            const existingAgent = await transaction.agent.findFirst({
-              where: {
-                organizationId: token.organizationId,
-                vmId: token.vmId,
-              },
-              select: { id: true, status: true },
-            });
-            if (existingAgent?.status === AgentStatus.ACTIVE) {
-              throw activeAgentConflict();
+            const telegraf = input.collectorType === 'TELEGRAF';
+            if (bootstrap || telegraf) {
+              const metadata = (
+                bootstrap
+                  ? organizationEnrollmentMetadataSchema
+                  : telegrafEnrollmentMetadataSchema
+              ).safeParse(input);
+              if (!metadata.success)
+                throw new BadRequestException('Invalid collector metadata');
+            } else if (
+              input.collectorVersion !== undefined ||
+              input.buildId !== undefined
+            ) {
+              throw new BadRequestException('Collector type is required');
             }
 
+            let vmId: string;
+            if (bootstrap) {
+              // The unique organization/hostname constraint rejects both active and
+              // revoked hosts. No lookup/attach/re-key fallback is permitted here.
+              try {
+                const vm = await transaction.vm.create({
+                  data: {
+                    organizationId: token.organizationId,
+                    hostname: input.hostname!,
+                    os: input.os!,
+                  },
+                  select: { id: true },
+                });
+                vmId = vm.id;
+              } catch (error) {
+                if (hasPrismaErrorCode(error, 'P2002')) {
+                  throw new ApplicationConflictError(
+                    'VM_HOSTNAME_CONFLICT',
+                    'Hostname is already registered',
+                  );
+                }
+                throw error;
+              }
+            } else {
+              vmId = token.vmId!;
+              const lockedVm = await transaction.$queryRaw<
+                { id: string }[]
+              >(Prisma.sql`
+              SELECT "id" FROM "Vm" WHERE "id" = ${vmId}
+                AND "organizationId" = ${token.organizationId} FOR UPDATE
+            `);
+              // A VM lock may itself take time; don't consume an expired token.
+              if (lockedVm.length === 0 || token.expiresAt <= new Date())
+                return null;
+            }
+
+            const existingAgent = bootstrap
+              ? null
+              : await transaction.agent.findFirst({
+                  where: { organizationId: token.organizationId, vmId },
+                  select: { id: true, status: true, collectorType: true },
+                });
+            if (existingAgent?.status === AgentStatus.ACTIVE)
+              throw activeAgentConflict();
+            if (
+              existingAgent?.collectorType === AgentCollectorType.TELEGRAF &&
+              !telegraf
+            ) {
+              throw new BadRequestException(
+                'Telegraf recovery requires collector metadata',
+              );
+            }
+
+            const now = new Date();
             const agentData = {
               credentialHash: input.credentialHash,
               status: AgentStatus.ACTIVE,
-              enrolledAt: input.now,
+              enrolledAt: now,
               revokedAt: null,
+              ...(telegraf
+                ? {
+                    collectorType: AgentCollectorType.TELEGRAF,
+                    collectorVersion: input.collectorVersion,
+                    buildId: input.buildId,
+                    appliedConfigVersion: null,
+                    appliedConfigHash: null,
+                    appliedConfigAt: null,
+                    rejectedConfigVersion: null,
+                    rejectedConfigError: null,
+                    lastControlContactAt: null,
+                  }
+                : {}),
             };
             const agent = existingAgent
               ? await transaction.agent.update({
@@ -198,49 +324,60 @@ export class EnrollmentRepository {
               : await transaction.agent.create({
                   data: {
                     organizationId: token.organizationId,
-                    vmId: token.vmId,
+                    vmId,
                     ...agentData,
                   },
                   select: { id: true },
                 });
 
-            if (input.os !== undefined) {
+            if (!bootstrap && input.os !== undefined) {
               await transaction.vm.update({
-                where: { id: token.vmId },
+                where: { id: vmId },
                 data: { os: input.os },
               });
             }
+            // Only an explicit Telegraf enrollment/recovery initializes the native
+            // profile. Existing desired settings are retained during recovery.
+            const definition = initialMonitoringDefinition();
+            const config = telegraf
+              ? await transaction.vmMonitoringConfig.upsert({
+                  where: { vmId },
+                  create: {
+                    vmId,
+                    organizationId: token.organizationId,
+                    version: 1,
+                    schemaVersion: definition.schemaVersion,
+                    profileKey: definition.profileKey,
+                    definition: { ...definition },
+                  },
+                  update: {},
+                  select: { version: true },
+                })
+              : null;
 
             await transaction.enrollmentToken.update({
               where: { id: token.id },
-              data: {
-                status: EnrollmentTokenStatus.CONSUMED,
-                consumedAt: input.now,
-              },
+              data: { status: EnrollmentTokenStatus.CONSUMED, consumedAt: now },
             });
-
             return {
               agentId: agent.id,
               organizationId: token.organizationId,
-              vmId: token.vmId,
+              vmId,
+              desiredVersion: config?.version ?? 0,
             };
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (hasPrismaErrorCode(error, 'P2034')) {
-          if (attempt + 1 < MAX_CONSUME_RETRIES) {
-            continue;
-          }
-          throw error;
-        }
-        if (hasPrismaErrorCode(error, 'P2002')) {
-          throw activeAgentConflict();
-        }
+        if (
+          hasPrismaErrorCode(error, 'P2034') &&
+          attempt + 1 < MAX_CONSUME_RETRIES
+        )
+          continue;
+        if (hasPrismaErrorCode(error, 'P2002')) throw activeAgentConflict();
         throw error;
       }
     }
-
     throw new Error('Enrollment transaction retry budget exhausted');
   }
 
@@ -291,7 +428,8 @@ const MAX_CONSUME_RETRIES = 3;
 type EnrollmentTokenLockRow = {
   id: string;
   organizationId: string;
-  vmId: string;
+  vmId: string | null;
+  scope: EnrollmentTokenScope;
   status: EnrollmentTokenStatus;
   expiresAt: Date;
 };

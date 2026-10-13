@@ -1,27 +1,27 @@
-import { useEffect, useMemo, useReducer, useState, useSyncExternalStore, type FormEvent, type JSX } from "react";
+import { useMemo, useReducer, useState, type FormEvent, type JSX } from "react";
 import {
   PixelBadge,
   PixelButton,
   PixelEmptyState,
   PixelInput,
-  PixelModal,
   PixelTabs,
 } from "@pxlkit/ui-kit";
 import { Link, useParams } from "react-router-dom";
 import { useTenant } from "../../../app/providers/app-providers";
 import { PxlKitIcon } from "../../../components/ui/pxlkit-icon";
-import { isValidVmId, useIssueVmEnrollmentToken, useVm, useVmCurrentMetrics, useVmMetricsRange, useVmTagMutation, type VmTagOperation } from "../hooks/use-vms";
+import { isValidVmId, useVm, useVmCurrentMetrics, useVmMetricsRange, useVmTagMutation, type VmTagOperation } from "../hooks/use-vms";
 import type { MetricName, Vm, VmChartMetric, VmMetricPoint, VmTimeRange } from "../vm.types";
 import { isMetricSupported, unsupportedMetricReason } from "../lib/metric-capabilities";
 import { metricSegments } from "../lib/metric-series";
 import { EMPTY_TAG_DRAFT, tagDraftReducer } from "../lib/tag-draft";
 import { isApiError } from "../../../lib/api/api-error";
-import { createLocalDateTimeFormatter, formatLocalDateTime, getBrowserTimeZone } from "../../../lib/date-time";
+import { createLocalDateTimeFormatter, getBrowserTimeZone } from "../../../lib/date-time";
 import { VM_TIME_RANGES } from "../vm.types";
-import { buildLinuxAgentCommand, buildWindowsAgentCommand } from "../lib/agent-connect";
-import { createAgentCopyFeedback } from "../lib/agent-copy-feedback";
 import { VmMetricCard } from "../components/vm-metric-card";
 import { VmStatusBadge } from "../components/vm-status-badge";
+import { ConnectVmModal } from "../components/connect-vm-modal";
+import { VmMonitoringSection } from "../components/vm-monitoring-section";
+import { canManageAgent } from "../lib/agent-connect";
 import { VmFullTagList } from "../components/vm-tag-list";
 import {
   formatLastSeen,
@@ -101,139 +101,6 @@ function MetricChart({ points, from, to, step, range, spec }: {
   );
 }
 
-function CopyableCommand({
-  platform,
-  command,
-  copied,
-  onCopy,
-}: {
-  platform: "Linux" | "Windows";
-  command: string;
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  return (
-    <div className="border-2 border-retro-border bg-retro-canvas/40 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-retro-text">{platform}</h3>
-        <PixelButton
-          type="button"
-          tone="cyan"
-          variant="ghost"
-          size="sm"
-          onClick={onCopy}
-          aria-label={`Copy ${platform} agent command`}
-        >
-          <PxlKitIcon name={copied ? "check" : "copy"} size={14} />
-          {copied ? "Copied" : "Copy"}
-        </PixelButton>
-      </div>
-      <textarea
-        readOnly
-        value={command}
-        aria-label={`${platform} agent install command`}
-        className="mt-3 min-h-28 w-full resize-y border-2 border-retro-border bg-retro-surface p-3 font-mono text-xs leading-5 text-retro-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-retro-cyan"
-        onFocus={(event) => event.currentTarget.select()}
-      />
-    </div>
-  );
-}
-
-function formatEnrollmentExpiry(expiresAt: string): string {
-  return formatLocalDateTime(expiresAt, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function ConnectAgentModal({
-  open,
-  token,
-  isPending,
-  error,
-  onClose,
-}: {
-  open: boolean;
-  token?: { token: string; expiresAt: string };
-  isPending: boolean;
-  error: Error | null;
-  onClose: () => void;
-}) {
-  const copySession = useMemo(() => ({
-    open,
-    token: token?.token,
-    feedback: createAgentCopyFeedback(),
-  }), [open, token?.token]);
-  const { feedback } = copySession;
-  const { copiedPlatform, error: copyError } = useSyncExternalStore(feedback.subscribe, feedback.getSnapshot, feedback.getSnapshot);
-  useEffect(() => () => feedback.reset(), [feedback]);
-  const commands = token
-    ? {
-        Linux: buildLinuxAgentCommand(token.token),
-        Windows: buildWindowsAgentCommand(token.token),
-      }
-    : undefined;
-
-  function copyCommand(platform: "Linux" | "Windows") {
-    if (!copySession.open || !copySession.token || !commands) return;
-    void feedback.copy(platform, commands[platform]);
-  }
-
-  function closeModal() {
-    feedback.reset();
-    onClose();
-  }
-
-  return (
-    <PixelModal
-      open={open}
-      onClose={closeModal}
-      title="Connect agent"
-      description="Run one command on the target machine to install and enroll the OpsGrid agent."
-      size="lg"
-      footer={(
-        <div className="flex justify-end">
-          <PixelButton type="button" tone="neutral" variant="ghost" onClick={closeModal}>Done</PixelButton>
-        </div>
-      )}
-    >
-      {isPending ? (
-        <div className="flex min-h-32 items-center justify-center text-sm text-retro-muted" role="status">
-          Retrieving an enrollment token…
-        </div>
-      ) : error ? (
-        <div className="border-2 border-retro-red bg-retro-red/10 p-4" role="alert">
-          <p className="text-sm font-semibold text-retro-text">Unable to retrieve an enrollment token.</p>
-          <p className="mt-2 text-sm text-retro-muted">{error.message}</p>
-        </div>
-      ) : token && commands ? (
-        <div className="space-y-4">
-          <div className="border-2 border-retro-gold bg-retro-gold/10 p-3">
-            <p className="text-sm font-semibold text-retro-text">Token expires {formatEnrollmentExpiry(token.expiresAt)} · {getBrowserTimeZone()}</p>
-            <p className="mt-1 text-xs text-retro-muted">Valid unused tokens may be reused until expiry. A replacement invalidates the previous enrollment token.</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <CopyableCommand
-              platform="Linux"
-              command={commands.Linux}
-              copied={copiedPlatform === "Linux"}
-              onCopy={() => void copyCommand("Linux")}
-            />
-            <CopyableCommand
-              platform="Windows"
-              command={commands.Windows}
-              copied={copiedPlatform === "Windows"}
-              onCopy={() => void copyCommand("Windows")}
-            />
-          </div>
-          <p className="sr-only" role="status">{copiedPlatform ? `${copiedPlatform} agent command copied.` : ""}</p>
-          {copyError ? <p className="text-sm text-retro-red" role="alert">{copyError}</p> : null}
-          <p className="text-xs text-retro-muted">The browser receives only the one-time ENR token. The AGT credential is generated and stored on the target machine after enrollment.</p>
-        </div>
-      ) : (
-        <p className="text-sm text-retro-muted" role="status">Preparing the connection command…</p>
-      )}
-    </PixelModal>
-  );
-}
-
 function TagEditor({ vm, onCommit }: { vm: Vm; onCommit: (operation: VmTagOperation) => Promise<void> }) {
   const [draft, dispatch] = useReducer(tagDraftReducer, EMPTY_TAG_DRAFT);
   async function commit(operation: VmTagOperation, clearDraft: boolean) {
@@ -291,15 +158,14 @@ function TagEditor({ vm, onCommit }: { vm: Vm; onCommit: (operation: VmTagOperat
 export function VmDetailPage(): JSX.Element {
   const { vmId } = useParams<{ vmId: string }>();
   const { currentOrganization } = useTenant();
-  return <VmDetailContent key={`${currentOrganization?.id ?? ""}:${vmId ?? ""}`} />;
+  return <VmDetailContent key={`${currentOrganization?.id ?? ""}:${vmId ?? ""}:${currentOrganization?.role ?? ""}`} />;
 }
 
 function VmDetailContent(): JSX.Element {
   const { vmId } = useParams<{ vmId: string }>();
   const { currentOrganization } = useTenant();
   const vmQuery = useVm(currentOrganization?.id ?? null, vmId ?? null);
-  const issueEnrollmentMutation = useIssueVmEnrollmentToken(currentOrganization?.id ?? null, vmId ?? null);
-  const [isConnectOpen, setIsConnectOpen] = useState(false);
+  const [connectMode, setConnectMode] = useState<"reinstall" | "recover" | null>(null);
   const [range, setRange] = useState<VmTimeRange>("1h");
   const currentQuery = useVmCurrentMetrics(currentOrganization?.id ?? null, vmId ?? null);
   const rangeQuery = useVmMetricsRange(currentOrganization?.id ?? null, vmId ?? null, range);
@@ -342,20 +208,13 @@ function VmDetailContent(): JSX.Element {
   }
 
 
-  function openConnectModal() {
-    setIsConnectOpen(true);
-    issueEnrollmentMutation.reset();
-    issueEnrollmentMutation.mutate();
-  }
-
-  function closeConnectModal() {
-    setIsConnectOpen(false);
-    issueEnrollmentMutation.reset();
-  }
-
   const metrics = currentQuery.isError ? null : currentQuery.data?.metrics;
-  const status = currentQuery.isError ? vm.status : currentQuery.data?.status ?? vm.status;
-  const lastSeenAt = currentQuery.data?.lastSeenAt ?? vm.lastSeenAt;
+  const telemetry = currentQuery.data ?? vm;
+  // Never present the retained DB status as host health. An unavailable current read is neutral.
+  const status = currentQuery.isError ? "unknown" : telemetry.hostState;
+  // An explicit current null means no native metric timestamp, NOT the stored inventory timestamp.
+  const lastSeenAt = currentQuery.data ? currentQuery.data.lastSeenAt : vm.lastSeenAt;
+  const canManage = canManageAgent(currentOrganization.role);
   const currentCapabilities = currentQuery.isError || currentQuery.isPending
     ? undefined : currentQuery.data?.metricsCapabilities ?? vm.metricsCapabilities;
   const rangeCapabilities = rangeQuery.data?.metricsCapabilities ?? vm.metricsCapabilities;
@@ -363,11 +222,13 @@ function VmDetailContent(): JSX.Element {
   const currentValue = (name: MetricName, formatted: string) => isMetricSupported(currentCapabilities, name) ? formatted : "N/A";
   const lifecycleMessage = currentQuery.isError
     ? "Inventory retained. Current telemetry could not be read."
-    : currentCapabilities?.platform === "unknown"
-      ? "Unsupported platform"
-      : status === "DISCONNECTED"
-      ? `Inventory retained. No fresh telemetry; last seen ${formatLastSeen(lastSeenAt)}.`
-      : "Status derived from the latest reported telemetry.";
+    : status === "unsupported"
+      ? "Host state unsupported for this collector/platform. No legacy-to-native health inference is made."
+      : status === "unknown"
+        ? "Host state unknown. Agent API contact or fresh internal delivery alone does not prove host health."
+        : status === "DISCONNECTED"
+          ? `Inventory retained. No fresh native telemetry; last metric ${formatLastSeen(lastSeenAt)}.`
+          : "Host state derived from authoritative native host telemetry.";
 
   return (
     <div className="space-y-6" data-testid="vm-detail-page">
@@ -385,19 +246,14 @@ function VmDetailContent(): JSX.Element {
           <p className="mt-2 text-sm text-retro-muted">Created {formatLastSeen(vm.createdAt)} · Inventory record</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-retro-muted">
-          {vm.agentStatus === "ACTIVE" ? (
-            <PixelBadge tone="green" variant="soft">Agent enrolled</PixelBadge>
-          ) : (
-            <PixelButton type="button" tone="cyan" onClick={openConnectModal} disabled={issueEnrollmentMutation.isPending}>
-              <PxlKitIcon name="cloud" size={14} />
-              Connect agent
-            </PixelButton>
-          )}
+          <PixelBadge tone="neutral" variant="soft">Credential: {vm.agentStatus ?? "none"} (not delivery)</PixelBadge>
+          <PixelButton type="button" tone="neutral" variant="ghost" disabled={!canManage} onClick={() => setConnectMode("reinstall")} title={!canManage ? "Admin or Operator role required" : "Reuse protected local identity; no new code"}>Reinstall locally</PixelButton>
+          <PixelButton type="button" tone="cyan" disabled={!canManage} onClick={() => setConnectMode("recover")} title={!canManage ? "Admin or Operator role required" : "Explicit VM-bound recovery"}>Recover agent</PixelButton>
           <span className="border border-retro-border px-2 py-1">ID <span className="font-mono text-retro-text">{vm.id}</span></span>
         </div>
       </div>
 
-      <div className={`border-2 p-4 ${vm.status === "DISCONNECTED" ? "border-retro-gold bg-retro-gold/10" : "border-retro-border bg-retro-surface"}`} role={vm.status === "DISCONNECTED" ? "alert" : "status"}>
+      <div className={`border-2 p-4 ${status === "DISCONNECTED" ? "border-retro-gold bg-retro-gold/10" : "border-retro-border bg-retro-surface"}`} role={status === "DISCONNECTED" ? "alert" : "status"}>
         <div className="flex items-start gap-3">
           <VmStatusBadge status={status} />
           <p className="text-sm text-retro-text">{lifecycleMessage}</p>
@@ -408,15 +264,25 @@ function VmDetailContent(): JSX.Element {
         <h2 id="vm-identity-heading" className="sr-only">VM identity</h2>
         <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">OS type</dt><dd className="mt-1 font-semibold text-retro-text">{vm.osType}</dd><p className="text-xs text-retro-muted">{vm.osVersion}</p></div>
         <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">IP address</dt><dd className="mt-1 font-mono font-semibold text-retro-text">{vm.ipAddress}</dd></div>
-        <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">Last seen</dt><dd className="mt-1 font-semibold text-retro-text">{formatLastSeen(lastSeenAt)}</dd><p className="text-xs text-retro-muted">{getBrowserTimeZone()}</p></div>
+        <div><dt className="text-xs uppercase tracking-[0.08em] text-retro-muted">Last metric delivery</dt><dd className="mt-1 font-semibold text-retro-text">{formatLastSeen(lastSeenAt)}</dd><p className="text-xs text-retro-muted">{getBrowserTimeZone()}</p></div>
       </section>
+
+      <section className="grid gap-3 border-2 border-retro-border bg-retro-surface p-4 text-sm sm:grid-cols-2" aria-labelledby="vm-telemetry-identity-heading">
+        <h2 id="vm-telemetry-identity-heading" className="sr-only">Collector and delivery identity</h2>
+        <p className="break-all text-retro-muted">Collector: <span className="text-retro-text">{telemetry.collectorType ?? "Unknown"} · {telemetry.collectorVersion ?? "version unknown"} · {telemetry.buildId ?? "build unknown"}</span></p>
+        <p className="text-retro-muted">Compatibility: <span className="text-retro-text">{telemetry.telemetryCompatibility}</span> · Delivery: <span className="text-retro-text">{currentQuery.isError ? "unknown" : telemetry.telemetryDelivery}</span></p>
+        <p className="text-retro-muted">Last agent API contact: <span className="text-retro-text">{formatLastSeen(telemetry.lastControlContactAt)}</span> · {getBrowserTimeZone()}</p>
+        <p className="text-xs text-retro-muted">API contact, credential state and config ACK are not metric delivery or host health. Native-only history may have an Alloy cutover gap; Windows load remains unsupported.</p>
+      </section>
+
+      <VmMonitoringSection organizationId={currentOrganization.id} role={currentOrganization.role} vm={vm} />
 
       <section className="border-2 border-retro-border bg-retro-surface p-4 shadow-[3px_3px_0_var(--cloudops-shadow)]" aria-labelledby="vm-tags-heading">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div><h2 id="vm-tags-heading" className="text-lg font-semibold text-retro-text">Tags</h2><p className="mt-1 text-sm text-retro-muted">Use unique key:value tags to keep inventory filters consistent.</p></div>
           <VmFullTagList tags={vm.tags} />
         </div>
-        <div className="mt-5 border-t border-retro-border/70 pt-5"><TagEditor key={`${currentOrganization.id}:${vm.id}`} vm={vm} onCommit={tagMutation.mutateAsync} /></div>
+        <div className="mt-5 border-t border-retro-border/70 pt-5">{canManage ? <TagEditor key={`${currentOrganization.id}:${vm.id}`} vm={vm} onCommit={tagMutation.mutateAsync} /> : <p className="text-sm text-retro-muted">Read-only tags.</p>}</div>
       </section>
 
       <section aria-labelledby="vm-metrics-heading">
@@ -457,12 +323,15 @@ function VmDetailContent(): JSX.Element {
             </div> : null}
       </section>
 
-      <ConnectAgentModal
-        open={isConnectOpen}
-        token={issueEnrollmentMutation.data}
-        isPending={issueEnrollmentMutation.isPending}
-        error={issueEnrollmentMutation.error}
-        onClose={closeConnectModal}
+      <ConnectVmModal
+        open={connectMode !== null && canManage}
+        organizationId={currentOrganization.id}
+        role={currentOrganization.role}
+        mode={connectMode ?? "reinstall"}
+        vmId={vm.id}
+        hostname={vm.hostname}
+        agentActive={vm.agentStatus === "ACTIVE"}
+        onClose={() => setConnectMode(null)}
       />
     </div>
   );

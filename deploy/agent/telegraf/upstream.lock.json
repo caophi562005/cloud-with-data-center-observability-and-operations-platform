@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/influxdata/telegraf",
+  "version": "1.40.1",
+  "tag": "v1.40.1",
+  "tagObject": "c23023ec014359c536e710d3cf4aaf93dbb48e2d",
+  "commit": "26b8f4478b676f4f5e5d8ce1622cdf4f6c273bda",
+  "archive": {
+    "url": "https://codeload.github.com/influxdata/telegraf/tar.gz/26b8f4478b676f4f5e5d8ce1622cdf4f6c273bda",
+    "sha256": "03e7b05ea55b2e91e7b5f34e0772ab2033e646720d48e73f472563a7956947ec",
+    "root": "telegraf-26b8f4478b676f4f5e5d8ce1622cdf4f6c273bda"
+  },
+  "go": { "minimum": "1.27.0", "source": "go.mod:3", "cgoEnabled": false },
+  "license": { "spdx": "MIT", "source": "LICENSE", "redistribution": "Copy upstream LICENSE with binary; dependency licenses remain subject to their own terms." },
+  "provenance": {
+    "tagUrl": "https://api.github.com/repos/influxdata/telegraf/git/tags/c23023ec014359c536e710d3cf4aaf93dbb48e2d",
+    "tagSignatureVerified": false,
+    "checksumMethod": "SHA256 of immutable-commit codeload archive downloaded from official GitHub; not an upstream signed checksum",
+    "sourceVerification": "tag resolved to commit; archive checksum measured locally; go.mod and production plugin/serializer source inspected"
+  },
+  "targets": ["linux-amd64", "linux-arm64", "windows-amd64"],
+  "plugins": {
+    "inputs": ["cpu", "mem", "disk", "diskio", "net", "system", "internal", "redis", "postgresql", "mysql", "nginx", "docker"],
+    "windowsInputs": ["win_perf_counters"],
+    "outputs": ["http", "heartbeat", "file"],
+    "serializers": ["prometheusremotewrite", "influx"],
+    "parsers": ["influx", "json"]
+  },
+  "overlay": {
+    "sourceDirectory": "opsgrid",
+    "destinationDirectory": "internal/opsgrid",
+    "lifecyclePatch": "patches/opsgrid-lifecycle.patch",
+    "patchSha256": "5ae013ff1cb655ec2026547d9fd1598df5b48171559e35578728f2deb0c28277",
+    "files": ["types.go", "client.go", "identity.go", "store.go", "store_linux.go", "store_windows.go", "coordinator.go", "policy.go", "binding.go"],
+    "status": "native same-process lifecycle implemented; custom archive builds require locked patch and all nine sources; upstream-only builds never apply overlays; runtime UNVERIFIED"
+  }
+}

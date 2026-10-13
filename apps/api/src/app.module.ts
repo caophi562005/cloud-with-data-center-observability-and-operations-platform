@@ -30,6 +30,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const AUTH_RATE_LIMIT = 10;
 const GENERAL_RATE_LIMIT = 120;
 const ENROLLMENT_RATE_LIMIT = 10;
+const AGENT_CONTROL_RATE_LIMIT = 120;
 const SNS_ALERTS_RATE_LIMIT = 120;
 
 @Module({
@@ -72,6 +73,12 @@ const SNS_ALERTS_RATE_LIMIT = 120;
           skipIf: (context) => !isEnrollmentRateLimitedRoute(context),
         },
         {
+          name: 'agentControl',
+          ttl: RATE_LIMIT_WINDOW_MS,
+          limit: AGENT_CONTROL_RATE_LIMIT,
+          skipIf: (context) => !isAgentControlRateLimitedRoute(context),
+        },
+        {
           name: 'snsAlerts',
           ttl: RATE_LIMIT_WINDOW_MS,
           limit: SNS_ALERTS_RATE_LIMIT,
@@ -84,6 +91,7 @@ const SNS_ALERTS_RATE_LIMIT = 120;
           skipIf: (context) =>
             isAuthRateLimitedRoute(context) ||
             isEnrollmentRateLimitedRoute(context) ||
+            isAgentControlRateLimitedRoute(context) ||
             isSnsAlertsRateLimitedRoute(context),
         },
       ],
@@ -144,6 +152,16 @@ export function isEnrollmentRateLimitedRoute(context: {
   return /\/agent-enrollment\/?(?:\?.*)?$/.test(route);
 }
 
+// Reserved Task 4 machine routes get their own budget at the same rate as the
+// existing general limiter; enrollment remains independently capped at 10/min.
+export function isAgentControlRateLimitedRoute(context: {
+  switchToHttp(): { getRequest(): { path?: string; originalUrl?: string; route?: { path?: string } } };
+}): boolean {
+  const request = context.switchToHttp().getRequest();
+  const route = request.path ?? request.route?.path ?? request.originalUrl ?? '';
+  return /\/agent\/(?:config|config-result|heartbeat)\/?(?:\?.*)?$/.test(route);
+}
+
 export function isSnsAlertsRateLimitedRoute(context: {
   switchToHttp(): { getRequest(): { path?: string; originalUrl?: string; route?: { path?: string } } };
 }): boolean {
@@ -157,6 +175,7 @@ export const throttling = {
   authLimit: AUTH_RATE_LIMIT,
   generalLimit: GENERAL_RATE_LIMIT,
   enrollmentLimit: ENROLLMENT_RATE_LIMIT,
+  agentControlLimit: AGENT_CONTROL_RATE_LIMIT,
 } as const;
 
 export { loggerRedactionPaths };

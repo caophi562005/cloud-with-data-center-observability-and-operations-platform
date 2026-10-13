@@ -20,7 +20,9 @@ export function deriveVmHealth(
   sampledAt: number | null,
   now: number,
   policy: VmHealthPolicy = VM_HEALTH_POLICY,
-): VmStatus {
+): VmStatus | 'unknown' {
+  if (!Number.isFinite(now) || now <= 0 || (sampledAt !== null && !Number.isFinite(sampledAt)))
+    return 'unknown';
   if (
     !active ||
     sampledAt === null ||
@@ -40,5 +42,5 @@ export function deriveVmHealth(
     return 'WARNING';
   return Object.values(metrics).some((n) => n !== null && Number.isFinite(n))
     ? 'HEALTHY'
-    : 'DISCONNECTED';
+    : 'unknown'; // Fresh internal delivery alone is not usable host telemetry.
 }

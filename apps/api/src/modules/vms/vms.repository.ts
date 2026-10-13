@@ -28,6 +28,10 @@ const VM_AGENT_SELECT = {
   status: true,
   enrolledAt: true,
   lastSeenAt: true,
+  collectorType: true,
+  collectorVersion: true,
+  buildId: true,
+  lastControlContactAt: true,
 } as const satisfies Prisma.AgentSelect;
 
 const VM_BASE_SELECT = {
@@ -78,6 +82,10 @@ type VmProjection = {
         status: AgentSummary['status'];
         enrolledAt: Date;
         lastSeenAt: Date | null;
+        collectorType?: AgentSummary['collectorType'];
+        collectorVersion?: string | null;
+        buildId?: string | null;
+        lastControlContactAt?: Date | null;
       }
     | AgentSummary
     | null;
@@ -99,6 +107,10 @@ function toVmRecord(value: VmProjection, organizationId: string): VmRecord {
           status: relationAgent.status,
           enrolledAt: relationAgent.enrolledAt,
           lastSeenAt: relationAgent.lastSeenAt,
+          collectorType: relationAgent.collectorType ?? null,
+          collectorVersion: relationAgent.collectorVersion ?? null,
+          buildId: relationAgent.buildId ?? null,
+          lastControlContactAt: relationAgent.lastControlContactAt ?? null,
         }
       : null;
 

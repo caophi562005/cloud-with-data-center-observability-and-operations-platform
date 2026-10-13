@@ -5,6 +5,11 @@ umask 077
 
 OUTPUT_PREFIX='[opsgrid-agent]'
 RELEASE_BASE_URL='https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/latest/download'
+OPSGRID_RELEASE_COLLECTOR='telegraf'
+NATIVE_BUILD_ID='opsgrid-custom-6ab4b57bbaede19d'
+if [[ "$OPSGRID_RELEASE_COLLECTOR" == telegraf ]]; then
+  RELEASE_BASE_URL="https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/download/$NATIVE_BUILD_ID"
+fi
 TOKEN=''
 INSTALLER_ARGS=()
 TEMP_ROOT=''
@@ -20,7 +25,8 @@ usage() {
   printf '%s   --gateway-url URL   Override the installer default Gateway\n' "$OUTPUT_PREFIX"
   printf '%s   --re-enroll         Replace existing credential using a new token\n' "$OUTPUT_PREFIX"
   printf '%s   --apply-profile PROFILE  Upgrade managed Linux metrics without re-enrollment\n' "$OUTPUT_PREFIX"
-  printf '%s Reruns need no token: installed agents reconcile the Gateway URL.\n' "$OUTPUT_PREFIX"
+  printf '%s Native reruns reuse a protected identity; explicit --re-enroll is operator recovery.\n' "$OUTPUT_PREFIX"
+  printf '%s Prefer temporary OPSGRID_ENROLLMENT_TOKEN. --token can remain in initial argv/history; it is not forwarded to native/service argv.\n' "$OUTPUT_PREFIX"
   printf '%s   --help              Show this help text\n' "$OUTPUT_PREFIX"
 }
 
@@ -66,7 +72,9 @@ parse_args() {
     esac
   done
 
-  if [[ -n "$TOKEN" ]]; then
+  if [[ -z "$TOKEN" ]]; then TOKEN="${OPSGRID_ENROLLMENT_TOKEN:-}"; fi
+  unset OPSGRID_ENROLLMENT_TOKEN
+  if [[ -n "$TOKEN" && "$OPSGRID_RELEASE_COLLECTOR" == alloy ]]; then
     INSTALLER_ARGS+=(--enrollment-token "$TOKEN")
   fi
 }
@@ -108,7 +116,7 @@ download_asset() {
   local error_file="${TEMP_ROOT}/download.error"
 
   rm -f -- "$temporary" "$error_file"
-  if ! curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
       --output "$temporary" "$RELEASE_BASE_URL/$asset_name" 2>"$error_file"; then
     rm -f -- "$temporary" "$error_file"
     log 'release asset download failed' >&2
@@ -143,9 +151,37 @@ validate_assets() {
   return 0
 }
 
+native_main() {
+  local name digest actual installer_exit=0
+  for name in python3 sha256sum bash; do
+    command -v "$name" >/dev/null 2>&1 || { log 'native launcher prerequisite unavailable' >&2; return 10; }
+  done
+  TEMP_ROOT="$(mktemp -d '/tmp/opsgrid-agent-launcher.XXXXXX')" || return 20
+  chmod 700 "$TEMP_ROOT" || return 20
+  download_asset release-manifest.json "$TEMP_ROOT/release-manifest.json" || return 20
+  digest="$(python3 - "$TEMP_ROOT/release-manifest.json" "$NATIVE_BUILD_ID" <<'PY'
+import json,sys
+m=json.load(open(sys.argv[1]))
+assert m['schemaVersion']==1 and m['collector']=='telegraf' and m['buildID']==sys.argv[2]
+a=[x for x in m['assets'] if x['name']=='install.sh']
+assert len(a)==1 and len(a[0]['sha256'])==64 and all(c in '0123456789abcdef' for c in a[0]['sha256'])
+print(a[0]['sha256'])
+PY
+)" || { log 'native release metadata invalid' >&2; return 20; }
+  download_asset install.sh "$TEMP_ROOT/install.sh" || return 20
+  actual="$(sha256sum "$TEMP_ROOT/install.sh")"; actual="${actual%% *}"
+  [[ "$actual" == "$digest" ]] || { log 'native installer SHA256 mismatch' >&2; return 20; }
+  chmod 700 "$TEMP_ROOT/install.sh" || return 20
+  # Token is a transient bootstrap environment value, not a child/native argv value.
+  OPSGRID_ENROLLMENT_TOKEN="$TOKEN" bash "$TEMP_ROOT/install.sh" "${INSTALLER_ARGS[@]}" || installer_exit=$?
+  TOKEN=''; unset OPSGRID_ENROLLMENT_TOKEN
+  return "$installer_exit"
+}
+
 main() {
   parse_args "$@"
   require_commands
+  if [[ "$OPSGRID_RELEASE_COLLECTOR" == telegraf ]]; then native_main; return; fi
 
   if ! TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/opsgrid-agent-launcher.XXXXXX")"; then
     log 'launcher temporary directory creation failed' >&2
