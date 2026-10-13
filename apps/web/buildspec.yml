@@ -24,7 +24,7 @@ phases:
       - pnpm --dir apps/web lint
       # Public origin stays on the build; legacy relative unit fixtures use a
       # child-only cleared value. Origin tests explicitly exercise absolute mode.
-      - NODE_ENV=test VITE_API_URL= pnpm --dir apps/web test
+      - NODE_ENV=test VITE_API_URL= VITE_AGENT_API_URL=https://api.opsgrid.hacmieu.com pnpm --dir apps/web test
       - pnpm --dir apps/web build
   post_build:
     commands:

@@ -1,5 +1,9 @@
-export function resolveApiOrigin(value: unknown, production: boolean): string {
-  const message = "VITE_API_URL must be an HTTPS origin";
+export function resolveApiOrigin(
+  value: unknown,
+  production: boolean,
+  variableName = "VITE_API_URL",
+): string {
+  const message = `${variableName} must be an HTTPS origin`;
   if (value == null || value === "") {
     if (!production) return "";
     throw new Error(message);

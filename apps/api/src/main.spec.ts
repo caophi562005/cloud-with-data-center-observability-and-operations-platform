@@ -51,7 +51,10 @@ describe('configureApp', () => {
       credentials: true,
     });
     expect(app.enableShutdownHooks).toHaveBeenCalledOnce();
-    expect(app.use).toHaveBeenCalledTimes(2);
+    expect(app.use).toHaveBeenCalledTimes(3);
+    expect(app.use).toHaveBeenNthCalledWith(1, expect.any(Function)); // route-local SNS parser, including disabled mode
+    expect(app.use).toHaveBeenNthCalledWith(2, 'cookie-parser');
+    expect(app.use).toHaveBeenNthCalledWith(3, 'helmet');
     expect(app.useGlobalInterceptors).toHaveBeenCalledWith(
       expect.any(RequestIdInterceptor),
     );

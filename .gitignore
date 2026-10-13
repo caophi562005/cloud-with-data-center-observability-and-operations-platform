@@ -1,3 +1,4 @@
+/docs/superpowers/
 .mnemon
 .worktrees/
 
@@ -7,6 +8,7 @@
 *.tfstate.*
 *.tfvars
 *.tfplan
+*.tfplan.json
 crash.log
 crash.*.log
 *_override.tf
@@ -15,4 +17,19 @@ override.tf
 override.tf.json
 !terraform.tfvars.example
 
+design-system
+
 mprocs.*
+
+# Temporary deployment diagnostics, private config and execution ledger
+.superpowers/
+**/api-plan.json
+**/api-evidence.json
+**/runtime-config.json
+*.tfvars.json
+
+# Private runtime environment files; retain safe example templates only.
+.env
+.env.*
+!.env.example
+!.env.*.example

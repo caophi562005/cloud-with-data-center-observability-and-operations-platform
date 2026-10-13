@@ -12,6 +12,34 @@ enum Role {
   VIEWER
 }
 
+enum VmStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  DISCONNECTED
+}
+
+enum AgentStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum AgentCollectorType {
+  ALLOY
+  TELEGRAF
+}
+
+enum EnrollmentTokenScope {
+  VM
+  ORGANIZATION
+}
+
+enum EnrollmentTokenStatus {
+  ACTIVE
+  CONSUMED
+  REVOKED
+}
+
 model User {
   id          String       @id @default(uuid()) @db.Uuid
   cognitoSub  String       @unique
@@ -20,17 +48,135 @@ model User {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   memberships Membership[]
+  acknowledgedAlerts Alert[] @relation("AlertAcknowledgement")
+  alertEvents AlertEvent[] @relation("AlertEventActor")
 
   @@index([email])
 }
 
 model Organization {
-  id          String       @id @default(uuid()) @db.Uuid
-  name        String
-  slug        String       @unique
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  memberships Membership[]
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String
+  slug              String             @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  memberships       Membership[]
+  vms               Vm[]
+  tags              Tag[]
+  vmTags            VmTag[]
+  agents            Agent[]
+  enrollmentTokens  EnrollmentToken[]
+  monitoringConfigs VmMonitoringConfig[]
+}
+
+model Vm {
+  id                String             @id @default(uuid()) @db.Uuid
+  organizationId    String             @db.Uuid
+  hostname          String
+  ipAddress         String?
+  os                String?
+  status            VmStatus           @default(DISCONNECTED)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vmTags            VmTag[]
+  agent             Agent?
+  enrollmentTokens  EnrollmentToken[]
+  alerts            Alert[]
+  monitoringConfig  VmMonitoringConfig?
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, hostname])
+  @@index([organizationId, status])
+  @@index([organizationId, updatedAt])
+}
+
+model Tag {
+  id                String             @id @default(uuid()) @db.Uuid
+  organizationId    String             @db.Uuid
+  key               String
+  value             String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vmTags            VmTag[]
+
+  @@unique([organizationId, key, value])
+  @@index([organizationId, key, value])
+}
+
+model VmTag {
+  vmId             String       @db.Uuid
+  tagId            String       @db.Uuid
+  organizationId   String       @db.Uuid
+  createdAt        DateTime     @default(now())
+  vm               Vm           @relation(fields: [vmId], references: [id], onDelete: Cascade)
+  tag              Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([vmId, tagId])
+  @@index([organizationId, tagId, vmId])
+}
+
+model Agent {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  vmId           String       @unique @db.Uuid
+  credentialHash String       @unique
+  status         AgentStatus
+  enrolledAt     DateTime
+  lastSeenAt     DateTime?
+  revokedAt      DateTime?
+  collectorType         AgentCollectorType?
+  collectorVersion      String? @db.VarChar(128)
+  buildId               String? @db.VarChar(128)
+  appliedConfigVersion  Int?
+  appliedConfigHash     String? @db.VarChar(64)
+  appliedConfigAt       DateTime?
+  rejectedConfigVersion Int?
+  rejectedConfigError   String?
+  lastControlContactAt  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vm             Vm           @relation(fields: [vmId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, vmId])
+}
+
+model EnrollmentToken {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @db.Uuid
+  scope          EnrollmentTokenScope @default(VM)
+  vmId           String?               @db.Uuid
+  tokenHash      String                @unique
+  status         EnrollmentTokenStatus
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime              @default(now())
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vm             Vm?                   @relation(fields: [vmId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, vmId, status, expiresAt])
+  @@index([organizationId, scope, status, expiresAt])
+}
+
+model VmMonitoringConfig {
+  vmId              String       @id @db.Uuid
+  organizationId    String       @db.Uuid
+  version           Int
+  schemaVersion     Int
+  profileKey        String
+  definition        Json
+  secretsCiphertext String?
+  updatedAt         DateTime     @updatedAt
+  vm                Vm           @relation(fields: [organizationId, vmId], references: [organizationId, id], onDelete: Cascade)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, vmId])
+  @@index([organizationId])
 }
 
 model Membership {
@@ -46,4 +192,73 @@ model Membership {
   @@unique([userId, organizationId])
   @@index([userId])
   @@index([organizationId])
+}
+
+enum AlertStatus {
+  FIRING
+  RESOLVED
+}
+
+enum AlertSeverity {
+  WARNING
+  CRITICAL
+}
+
+model Alert {
+  id             String        @id @default(uuid()) @db.Uuid
+  source         String        @db.VarChar(64)
+  organizationId String        @db.Uuid
+  vmId           String        @db.Uuid
+  fingerprint    String        @db.VarChar(128)
+  alertName      String        @db.VarChar(128)
+  severity       AlertSeverity
+  status         AlertStatus
+  startsAt       DateTime      @db.Timestamptz(6)
+  endsAt         DateTime?     @db.Timestamptz(6)
+  startsAtKey    String        @db.VarChar(30)
+  endsAtKey      String?       @db.VarChar(30)
+  labels         Json
+  annotations    Json
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
+  vm             Vm            @relation(fields: [organizationId, vmId], references: [organizationId, id], onDelete: Cascade)
+  workflowStatus AlertWorkflowStatus @default(OPEN)
+  acknowledgedBy String? @db.Uuid
+  acknowledgedAt DateTime? @db.Timestamptz(6)
+  acknowledgedUser User? @relation("AlertAcknowledgement", fields: [acknowledgedBy], references: [id], onDelete: Restrict)
+  events AlertEvent[]
+
+  @@index([organizationId, workflowStatus, createdAt])
+  @@unique([source, organizationId, vmId, fingerprint, startsAtKey], map: "alerts_occurrence_key")
+  @@index([organizationId, status, startsAt])
+  @@index([organizationId, vmId, startsAt])
+  @@map("alerts")
+}
+
+enum AlertWorkflowStatus {
+  OPEN
+  ACKNOWLEDGED
+}
+
+enum AlertEventType {
+  ALERT_FIRING
+  ACKNOWLEDGED
+  COMMENT_ADDED
+  ALERT_RESOLVED
+}
+
+model AlertEvent {
+  id String @id @default(uuid()) @db.Uuid
+  alertId String @db.Uuid
+  sequence Int
+  type AlertEventType
+  actorId String? @db.Uuid
+  message String?
+  sourceTimeKey String? @db.VarChar(30)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  actor User? @relation("AlertEventActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([alertId, sequence])
+  @@map("alert_events")
 }

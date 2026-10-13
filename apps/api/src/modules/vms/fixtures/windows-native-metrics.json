@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "manifestSha256": "5317066ec40a0044b3000bcd3068645cd3a827e70f5589fc839f0d34d587eaf3",
+  "sourceCapture": ".superpowers/sdd/2026-10-05-windows-agent-e2e-and-baseline/task-6-recovery-assets/native-backend-1791167695068.json",
+  "sourceCaptureSha256": "3d9b58607d9f772c2a79ab47ea67305a9e946b3e30ffc7826ccb3e64581d64a4",
+  "observedUtc": "2026-10-05T02:34:55.067Z",
+  "vectorTimestampIsRawScrapeTimestamp": false,
+  "limitations": [
+    "Captured last_over_time vector evaluation timestamps are NOT raw scrape times.",
+    "Synthetic promtool histories below are not live-reference numerical acceptance.",
+    "Disk capacity values may update every 10-15 minutes despite fresh scrape.",
+    "Conservative drive-letter/NIC predicates do not prove universal device classification."
+  ],
+  "families": [
+    {
+      "family": "windows_cpu_time_total",
+      "type": "counter",
+      "unit": "seconds"
+    },
+    {
+      "family": "windows_memory_available_bytes",
+      "type": "gauge",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_memory_physical_total_bytes",
+      "type": "gauge",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_logical_disk_free_bytes",
+      "type": "gauge",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_logical_disk_size_bytes",
+      "type": "gauge",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_net_bytes_received_total",
+      "type": "counter",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_net_bytes_sent_total",
+      "type": "counter",
+      "unit": "bytes"
+    },
+    {
+      "family": "windows_system_boot_time_timestamp",
+      "type": "gauge",
+      "unit": "unix_timestamp_seconds"
+    }
+  ],
+  "samples": [
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,0",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "dpc",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "47.75"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,0",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "idle",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "45589.953125"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,0",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "interrupt",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "38.515625"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,0",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "privileged",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "843.53125"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,0",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "user",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "766.59375"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,1",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "dpc",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "6.734375"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,1",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "idle",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "45926.65625"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,1",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "interrupt",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "26.828125"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,1",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "privileged",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "652.59375"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_cpu_time_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "core": "0,1",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "mode": "user",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "620.8125"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_free_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "C:"
+      },
+      "value": [
+        1791167696.315,
+        "116922515456"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_free_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "HarddiskVolume2"
+      },
+      "value": [
+        1791167696.315,
+        "454033408"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_free_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "HarddiskVolume3"
+      },
+      "value": [
+        1791167696.315,
+        "62914560"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_size_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "C:"
+      },
+      "value": [
+        1791167696.315,
+        "135770669056"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_size_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "HarddiskVolume2"
+      },
+      "value": [
+        1791167696.315,
+        "470810624"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_logical_disk_size_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d",
+        "volume": "HarddiskVolume3"
+      },
+      "value": [
+        1791167696.315,
+        "99614720"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_memory_available_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "100569088"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_memory_physical_total_bytes",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "1015762944"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_net_bytes_received_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "nic": "Microsoft Hyper-V Network Adapter",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "884865730"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_net_bytes_sent_total",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "nic": "Microsoft Hyper-V Network Adapter",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "63288049"
+      ]
+    },
+    {
+      "metric": {
+        "__name__": "windows_system_boot_time_timestamp",
+        "agent_id": "b101cb3d-8579-4a71-8a27-96a962142bd9",
+        "instance": "opsgrid-windows",
+        "job": "integrations/windows",
+        "organization_id": "5510f612-68a4-4f2e-a9fd-4d38351d8c0a",
+        "vm_id": "fd9d09f1-5f66-4c73-b702-7fb87299884d"
+      },
+      "value": [
+        1791167696.315,
+        "1791120485.067"
+      ]
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import {
   type AuthenticationResultType,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { authConfig, type AuthConfig } from '../../../config/auth.config.js';
+import { authRefreshUnavailable } from '../../../common/errors/auth-refresh-unavailable.error.js';
 import { COGNITO_AUTH_FLOWS, COGNITO_CLIENT } from './cognito.constants.js';
 import type {
   CognitoAuthenticationResult,
@@ -135,26 +136,40 @@ export class CognitoService {
       REFRESH_TOKEN: refreshToken,
     };
 
-    if (username) {
-      authParameters.USERNAME = username;
-      this.addSecretHash(authParameters, username);
-    }
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), 10_000);
 
     try {
+      if (username) {
+        authParameters.USERNAME = username;
+        this.addSecretHash(authParameters, username);
+      }
+
       const response = await this.client.send(
         new InitiateAuthCommand({
           AuthFlow: COGNITO_AUTH_FLOWS.refresh,
           ClientId: this.config.clientId,
           AuthParameters: authParameters,
         }),
+        { abortSignal: abortController.signal },
       );
 
       return this.mapAuthenticationResult(
         response.AuthenticationResult,
         'refresh',
       );
-    } catch {
-      throw this.authenticationFailure('refresh');
+    } catch (error) {
+      const name = errorName(error);
+      if (
+        name === 'NotAuthorizedException' ||
+        name === 'UserNotFoundException' ||
+        name === 'UserNotConfirmedException'
+      ) {
+        throw this.authenticationFailure('refresh');
+      }
+      throw authRefreshUnavailable();
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -246,6 +261,16 @@ export class CognitoService {
     result: AuthenticationResultType | undefined,
     flow: 'login' | 'refresh',
   ): CognitoAuthenticationResult {
+    if (
+      flow === 'refresh' &&
+      (!isNonemptyString(result?.AccessToken) ||
+        (result?.IdToken !== undefined && !isNonemptyString(result.IdToken)) ||
+        (result?.RefreshToken !== undefined &&
+          !isNonemptyString(result.RefreshToken)))
+    ) {
+      throw authRefreshUnavailable();
+    }
+
     if (!result?.AccessToken) {
       throw this.authenticationFailure(flow);
     }
@@ -297,6 +322,10 @@ function mapCodeDeliveryDetails(
       : {}),
     ...(details.Destination ? { destination: details.Destination } : {}),
   };
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 function errorName(error: unknown): string | undefined {

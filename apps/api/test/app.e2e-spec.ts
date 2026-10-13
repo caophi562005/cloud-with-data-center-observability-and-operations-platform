@@ -12,7 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/main.js';
 import { authConfig, type AuthConfig } from '../src/config/auth.config.js';
-import { CognitoService } from '../src/infrastructure/aws/cognito/cognito.service.js';
+import { createHmac } from 'node:crypto';
+import {
+  ConfirmSignUpCommand,
+  InitiateAuthCommand,
+  ResendConfirmationCodeCommand,
+  RevokeTokenCommand,
+  SignUpCommand,
+  type AuthenticationResultType,
+} from '@aws-sdk/client-cognito-identity-provider';
+import { COGNITO_CLIENT } from '../src/infrastructure/aws/cognito/cognito.constants.js';
 import { CognitoTokenVerifierService } from '../src/infrastructure/aws/cognito/cognito-token-verifier.service.js';
 import { CognitoAuthGuard } from '../src/modules/auth/guards/cognito-auth.guard.js';
 import { CacheService } from '../src/infrastructure/cache/cache.service.js';
@@ -347,7 +356,40 @@ function createPrismaDouble(state: TestState) {
     }
   });
 
+  const findFirstMembership = vi.fn(
+    async ({ where }: { where: { userId: string } }) =>
+      [...state.memberships.values()].find(
+        (membership) => membership.userId === where.userId,
+      ) ?? null,
+  );
+  const createOrganization = vi.fn(
+    async ({ data }: { data: { name: string; slug: string } }) => {
+      const organization = { id: `personal-${data.slug}`, ...data };
+      state.organizations.set(organization.id, organization);
+      return organization;
+    },
+  );
+  const transaction = vi.fn(
+    async (
+      operation: (client: {
+        membership: {
+          findFirst: typeof findFirstMembership;
+          create: typeof createMembership;
+        };
+        organization: { create: typeof createOrganization };
+      }) => Promise<void>,
+    ) =>
+      operation({
+        membership: {
+          findFirst: findFirstMembership,
+          create: createMembership,
+        },
+        organization: { create: createOrganization },
+      }),
+  );
+
   return {
+    $transaction: transaction,
     $queryRaw: vi.fn().mockResolvedValue([{ result: 1 }]),
     user: { findUnique: findUser, upsert: upsertUser },
     organization: {
@@ -487,28 +529,27 @@ function createCognitoDoubles(state: TestState) {
     };
   });
 
-  const refreshToken = vi.fn(async (refresh: string, username?: string) => {
+  const refreshToken = async (refresh: string, secretHash?: string) => {
     const session = [...sessions.values()].find(
       (candidate) => candidate.refreshToken === refresh && !candidate.revoked,
     );
-    if (
-      !session ||
-      (username !== undefined && username !== session.user.email)
-    ) {
-      throw new UnauthorizedException({
-        code: 'AUTH_UNAUTHORIZED',
-        message: 'Authentication required',
+    // Email-only pools use the verified sub, not the sign-in email, for refresh.
+    const expectedHash = session
+      ? createHmac('sha256', TEST_AUTH_CONFIG.clientSecret!)
+          .update(`${session.user.cognitoSub}${TEST_CLIENT_ID}`)
+          .digest('base64')
+      : undefined;
+    if (!session || secretHash !== expectedHash) {
+      throw Object.assign(new Error('Invalid refresh token or secret hash'), {
+        name: 'NotAuthorizedException',
       });
     }
 
     session.refreshGeneration += 1;
     session.accessToken = `access-${session.user.id}-refresh-${session.refreshGeneration}`;
-    session.refreshToken = `refresh-${session.user.id}-refresh-${session.refreshGeneration}`;
-    return {
-      accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
-    };
-  });
+    // REFRESH_TOKEN_AUTH with rotation disabled issues no replacement refresh.
+    return { accessToken: session.accessToken };
+  };
 
   const revokeToken = vi.fn(async (refresh: string) => {
     const session = [...sessions.values()].find(
@@ -519,9 +560,10 @@ function createCognitoDoubles(state: TestState) {
     }
   });
 
+  const expiredAccessTokens = new Set<string>();
   const verifyAccessToken = vi.fn(async (token: string) => {
     const session = sessionForAccessToken(token);
-    if (!session) {
+    if (!session || expiredAccessTokens.has(token)) {
       throw new UnauthorizedException('invalid access token');
     }
     return {
@@ -546,22 +588,102 @@ function createCognitoDoubles(state: TestState) {
     };
   });
 
-  return {
-    cognito: {
-      signInWithPassword,
-      signUp,
-      confirmSignUp,
-      resendConfirmationCode,
-      refreshToken,
-      revokeToken,
+  const send = vi.fn(
+    async (
+      command:
+        | InitiateAuthCommand
+        | SignUpCommand
+        | ConfirmSignUpCommand
+        | ResendConfirmationCodeCommand
+        | RevokeTokenCommand,
+    ): Promise<
+      { AuthenticationResult?: AuthenticationResultType } & Record<
+        string,
+        unknown
+      >
+    > => {
+      if (command instanceof InitiateAuthCommand) {
+        const parameters = command.input.AuthParameters ?? {};
+        const tokens: {
+          accessToken: string;
+          idToken?: string;
+          refreshToken?: string;
+        } =
+          command.input.AuthFlow === 'REFRESH_TOKEN_AUTH'
+            ? await refreshToken(
+                parameters.REFRESH_TOKEN ?? '',
+                parameters.SECRET_HASH,
+              )
+            : await signInWithPassword(
+                parameters.USERNAME ?? '',
+                parameters.PASSWORD ?? '',
+              );
+        return {
+          AuthenticationResult: {
+            AccessToken: tokens.accessToken,
+            ...('idToken' in tokens ? { IdToken: tokens.idToken } : {}),
+            ...('refreshToken' in tokens
+              ? { RefreshToken: tokens.refreshToken }
+              : {}),
+            ExpiresIn: 900,
+            TokenType: 'Bearer',
+          },
+        };
+      }
+      if (command instanceof SignUpCommand) {
+        const result = await signUp(
+          command.input.Username ?? '',
+          command.input.Password ?? '',
+          command.input.UserAttributes?.find(({ Name }) => Name === 'name')
+            ?.Value ?? '',
+        );
+        return {
+          UserConfirmed: result.userConfirmed,
+          CodeDeliveryDetails: {
+            AttributeName: result.codeDeliveryDetails.attributeName,
+            DeliveryMedium: result.codeDeliveryDetails.deliveryMedium,
+            Destination: result.codeDeliveryDetails.destination,
+          },
+        };
+      }
+      if (command instanceof ConfirmSignUpCommand) {
+        await confirmSignUp(
+          command.input.Username ?? '',
+          command.input.ConfirmationCode ?? '',
+        );
+        return {};
+      }
+      if (command instanceof ResendConfirmationCodeCommand) {
+        const details = await resendConfirmationCode(
+          command.input.Username ?? '',
+        );
+        return {
+          CodeDeliveryDetails: {
+            AttributeName: details.attributeName,
+            DeliveryMedium: details.deliveryMedium,
+            Destination: details.destination,
+          },
+        };
+      }
+      if (command instanceof RevokeTokenCommand) {
+        await revokeToken(command.input.Token ?? '');
+        return {};
+      }
+      throw new Error('Unexpected Cognito SDK command');
     },
+  );
+
+  return {
+    cognito: { send },
     verifier: { verifyAccessToken, verifyIdToken },
+    expiredAccessTokens,
   };
 }
 
 type TestDoubles = {
   cognito: ReturnType<typeof createCognitoDoubles>['cognito'];
   verifier: ReturnType<typeof createCognitoDoubles>['verifier'];
+  expiredAccessTokens: Set<string>;
   prisma: ReturnType<typeof createPrismaDouble>;
   cache: InMemoryCacheDouble;
   redis: { ping: ReturnType<typeof vi.fn> };
@@ -604,6 +726,7 @@ function expectSetCookieAttributes(
   expect(header).toContain('HttpOnly');
   expect(header).toContain('SameSite=Lax');
   expect(header).not.toContain('Secure');
+  expect(header).not.toContain('Domain=');
   expect(header).not.toContain(TEST_PASSWORD);
 }
 
@@ -644,7 +767,7 @@ describe('CloudOps API contracts (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideProvider(CognitoService)
+      .overrideProvider(COGNITO_CLIENT)
       .useValue(doubles.cognito)
       .overrideProvider(CognitoTokenVerifierService)
       .useValue(doubles.verifier)
@@ -776,7 +899,7 @@ describe('CloudOps API contracts (e2e)', () => {
     expectSetCookieAttributes(cookieHeaders(login), 'access_token', '900');
   });
 
-  it('logs in with safe JSON, sets protected cookies, and serves empty organizations', async () => {
+  it('logs in with safe JSON, sets protected cookies, and provisions a personal organization for a new member', async () => {
     if (!app) {
       throw new Error('Test application is not initialized');
     }
@@ -800,6 +923,9 @@ describe('CloudOps API contracts (e2e)', () => {
     expectSetCookieAttributes(loginCookies, 'access_token', '900');
     expectSetCookieAttributes(loginCookies, 'refresh_token', '2592000');
     expectSetCookieAttributes(loginCookies, 'cognito_username', '2592000');
+    expect(cookieValue(loginCookies, 'cognito_username')).toBe(
+      'cognito-sub-admin',
+    );
 
     const me = await admin.get('/api/v1/me').expect(200);
     expect(me.body).toEqual({
@@ -824,68 +950,291 @@ describe('CloudOps API contracts (e2e)', () => {
       .post('/api/v1/auth/login')
       .send({ email: 'empty@example.com', password: TEST_PASSWORD })
       .expect(201);
-    const emptyOrganizations = await noMembership.get('/api/v1/me').expect(200);
-    expect(emptyOrganizations.body.organizations).toEqual([]);
-    expectSafeJson(emptyOrganizations.body);
+    const personalSession = await noMembership.get('/api/v1/me').expect(200);
+    expect(personalSession.body.organizations).toEqual([
+      {
+        id: expect.any(String),
+        name: 'empty',
+        slug: expect.stringMatching(/^empty-[a-z0-9]{6}$/),
+        role: 'ADMIN',
+      },
+    ]);
+    expectSafeJson(personalSession.body);
+    await noMembership
+      .post('/api/v1/auth/login')
+      .send({ email: 'empty@example.com', password: TEST_PASSWORD })
+      .expect(201);
+    expect(
+      (await noMembership.get('/api/v1/me').expect(200)).body.organizations,
+    ).toEqual(personalSession.body.organizations);
   });
 
-  it('replaces refresh cookies and clears all auth cookies on logout', async () => {
+  it.each(['missing', 'expired'] as const)(
+    'renews missing access using only refresh/sub cookies after /me rejects %s access',
+    async (accessState) => {
+      const login = await http()
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@example.com', password: TEST_PASSWORD })
+        .expect(201);
+      const initialCookies = cookieHeaders(login);
+      const initialAccess = cookieValue(initialCookies, 'access_token');
+      const originalRefresh = cookieValue(initialCookies, 'refresh_token');
+      const refreshCookies = [
+        `refresh_token=${originalRefresh}`,
+        `cognito_username=${cookieValue(initialCookies, 'cognito_username')}`,
+      ];
+      const meCookies = [...refreshCookies];
+      if (accessState === 'expired') {
+        doubles.expiredAccessTokens.add(initialAccess);
+        meCookies.push(`access_token=${initialAccess}`);
+      }
+      const unauthorized = await http()
+        .get('/api/v1/me')
+        .set('Cookie', meCookies)
+        .expect(401);
+      expect(unauthorized.body.code).toBe('AUTH_UNAUTHORIZED');
+      expect(unauthorized.headers['set-cookie']).toBeUndefined();
+
+      // Neither access nor ID token is sent; nonrotating refresh stays reusable.
+      let previousAccess = initialAccess;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const refresh = await http()
+          .post('/api/v1/auth/refresh')
+          .set('Origin', TEST_WEB_URL)
+          .set('Cookie', refreshCookies)
+          .expect(201);
+        const refreshedCookies = cookieHeaders(refresh);
+        const access = cookieValue(refreshedCookies, 'access_token');
+        expect(access).not.toBe(previousAccess);
+        expectSetCookieAttributes(refreshedCookies, 'access_token', '900');
+        expect(
+          refreshedCookies.some(
+            (cookie) =>
+              cookie.startsWith('refresh_token=') ||
+              cookie.startsWith('cognito_username='),
+          ),
+        ).toBe(false);
+        expectSafeJson(refresh.body);
+        const me = await http()
+          .get('/api/v1/me')
+          .set('Cookie', [...refreshCookies, `access_token=${access}`])
+          .expect(200);
+        expect(me.body.user.id).toBe('user-admin');
+        previousAccess = access;
+      }
+    },
+  );
+
+  it('expires all auth cookies when Cognito rejects an invalid refresh token', async () => {
+    const response = await http()
+      .post('/api/v1/auth/refresh')
+      .set('Origin', TEST_WEB_URL)
+      .set('Cookie', [
+        'access_token=expired-access',
+        'refresh_token=invalid-refresh',
+        'cognito_username=cognito-sub-admin',
+      ])
+      .expect(401);
+    expect(response.body).toMatchObject({ code: 'AUTH_UNAUTHORIZED' });
+    for (const name of ['access_token', 'refresh_token', 'cognito_username']) {
+      expectClearedCookieAttributes(cookieHeaders(response), name);
+    }
+    expectSafeJson(response.body);
+  });
+
+  it.each([
+    ['network timeout', { name: 'TimeoutError' }],
+    [
+      'provider throttling',
+      { name: 'TooManyRequestsException', $metadata: { httpStatusCode: 429 } },
+    ],
+    [
+      'provider outage',
+      { name: 'InternalErrorException', $metadata: { httpStatusCode: 500 } },
+    ],
+  ])(
+    'preserves refresh cookies on %s and allows a later retry',
+    async (_name, error) => {
+      const login = await http()
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@example.com', password: TEST_PASSWORD })
+        .expect(201);
+      const loginCookies = cookieHeaders(login);
+      const cookies = [
+        `refresh_token=${cookieValue(loginCookies, 'refresh_token')}`,
+        `cognito_username=${cookieValue(loginCookies, 'cognito_username')}`,
+      ];
+      doubles.cognito.send.mockRejectedValueOnce(
+        Object.assign(
+          new Error('private provider details: test-client-secret'),
+          error,
+        ),
+      );
+      const unavailable = await http()
+        .post('/api/v1/auth/refresh')
+        .set('Origin', TEST_WEB_URL)
+        .set('Cookie', cookies)
+        .expect(503);
+      expect(unavailable.body).toMatchObject({
+        code: 'AUTH_REFRESH_UNAVAILABLE',
+        message: 'We could not renew your session. Please try again.',
+      });
+      expect(unavailable.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(unavailable.body)).not.toContain(
+        'private provider',
+      );
+      expectSafeJson(unavailable.body);
+      await http()
+        .post('/api/v1/auth/refresh')
+        .set('Origin', TEST_WEB_URL)
+        .set('Cookie', cookies)
+        .expect(201);
+    },
+  );
+
+  it.each([
+    'NotAuthorizedException',
+    'UserNotFoundException',
+    'UserNotConfirmedException',
+  ])(
+    'expires auth cookies on permanent Cognito refresh failure %s',
+    async (name) => {
+      doubles.cognito.send.mockRejectedValueOnce(
+        Object.assign(new Error('private provider message'), { name }),
+      );
+      const response = await http()
+        .post('/api/v1/auth/refresh')
+        .set('Origin', TEST_WEB_URL)
+        .set('Cookie', [
+          'refresh_token=original-refresh',
+          'cognito_username=cognito-sub-admin',
+        ])
+        .expect(401);
+      expect(response.body.code).toBe('AUTH_UNAUTHORIZED');
+      for (const cookie of [
+        'access_token',
+        'refresh_token',
+        'cognito_username',
+      ]) {
+        expectClearedCookieAttributes(cookieHeaders(response), cookie);
+      }
+      expectSafeJson(response.body);
+    },
+  );
+
+  it.each(['refresh_token', 'cognito_username'])(
+    'expires auth cookies when required refresh cookie %s is missing',
+    async (missing) => {
+      const cookies = {
+        refresh_token: 'original-refresh',
+        cognito_username: 'cognito-sub-admin',
+      };
+      const response = await http()
+        .post('/api/v1/auth/refresh')
+        .set('Origin', TEST_WEB_URL)
+        .set(
+          'Cookie',
+          Object.entries(cookies)
+            .filter(([name]) => name !== missing)
+            .map(([name, value]) => `${name}=${value}`),
+        )
+        .expect(401);
+      expect(response.body.code).toBe('AUTH_UNAUTHORIZED');
+      for (const cookie of [
+        'access_token',
+        'refresh_token',
+        'cognito_username',
+      ]) {
+        expectClearedCookieAttributes(cookieHeaders(response), cookie);
+      }
+    },
+  );
+
+  it.each(['malformed provider response', 'token verification', 'database'])(
+    'preserves refresh cookies when %s is temporarily unavailable',
+    async (failure) => {
+      const login = await http()
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@example.com', password: TEST_PASSWORD })
+        .expect(201);
+      const loginCookies = cookieHeaders(login);
+      if (failure === 'malformed provider response') {
+        doubles.cognito.send.mockResolvedValueOnce({
+          AuthenticationResult: {},
+        });
+      } else if (failure === 'token verification') {
+        doubles.verifier.verifyAccessToken.mockRejectedValueOnce(
+          new UnauthorizedException('private JWKS verification error'),
+        );
+      } else {
+        doubles.prisma.user.findUnique.mockRejectedValueOnce(
+          new Error('private database connection error'),
+        );
+      }
+      const response = await http()
+        .post('/api/v1/auth/refresh')
+        .set('Origin', TEST_WEB_URL)
+        .set('Cookie', [
+          `refresh_token=${cookieValue(loginCookies, 'refresh_token')}`,
+          `cognito_username=${cookieValue(loginCookies, 'cognito_username')}`,
+        ])
+        .expect(503);
+      expect(response.body).toMatchObject({
+        code: 'AUTH_REFRESH_UNAVAILABLE',
+        message: 'We could not renew your session. Please try again.',
+      });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('private');
+      expectSafeJson(response.body);
+    },
+  );
+
+  it('expires auth cookies when the local user was removed before refresh', async () => {
+    const login = await http()
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin@example.com', password: TEST_PASSWORD })
+      .expect(201);
+    const loginCookies = cookieHeaders(login);
+    doubles.prisma.user.findUnique.mockResolvedValueOnce(null);
+    const response = await http()
+      .post('/api/v1/auth/refresh')
+      .set('Origin', TEST_WEB_URL)
+      .set('Cookie', [
+        `refresh_token=${cookieValue(loginCookies, 'refresh_token')}`,
+        `cognito_username=${cookieValue(loginCookies, 'cognito_username')}`,
+      ])
+      .expect(401);
+    expect(response.body.code).toBe('AUTH_UNAUTHORIZED');
+    for (const cookie of [
+      'access_token',
+      'refresh_token',
+      'cognito_username',
+    ]) {
+      expectClearedCookieAttributes(cookieHeaders(response), cookie);
+    }
+  });
+
+  it('clears all auth cookies on logout and revokes the original nonrotating refresh token', async () => {
     if (!app) {
       throw new Error('Test application is not initialized');
     }
-
     const agent = request.agent(app.getHttpServer());
     const login = await agent
       .post('/api/v1/auth/login')
       .send({ email: 'admin@example.com', password: TEST_PASSWORD })
       .expect(201);
-    const initialCookies = cookieHeaders(login);
-    const initialAccessToken = cookieValue(initialCookies, 'access_token');
-    const initialRefreshToken = cookieValue(initialCookies, 'refresh_token');
-
-    const refresh = await agent.post('/api/v1/auth/refresh').expect(201);
-    const refreshedCookies = cookieHeaders(refresh);
-    expect(cookieValue(refreshedCookies, 'access_token')).not.toBe(
-      initialAccessToken,
-    );
-    expect(cookieValue(refreshedCookies, 'refresh_token')).not.toBe(
-      initialRefreshToken,
-    );
-    expectSetCookieAttributes(refreshedCookies, 'access_token', '900');
-    expectSetCookieAttributes(refreshedCookies, 'refresh_token', '2592000');
-    expect(doubles.cognito.refreshToken).toHaveBeenCalledWith(
-      initialRefreshToken,
-      'admin@example.com',
-    );
-    expectSafeJson(refresh.body);
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/refresh')
-      .set('Cookie', [
-        `refresh_token=${initialRefreshToken}`,
-        'cognito_username=admin@example.com',
-      ])
-      .expect(401);
-
-    const refreshedRefreshToken = cookieValue(
-      refreshedCookies,
-      'refresh_token',
-    );
+    const originalCookies = cookieHeaders(login);
+    await agent.post('/api/v1/auth/refresh').expect(201);
     const logout = await agent.post('/api/v1/auth/logout').expect(201);
-    const clearedCookies = cookieHeaders(logout);
-    expectClearedCookieAttributes(clearedCookies, 'access_token');
-    expectClearedCookieAttributes(clearedCookies, 'refresh_token');
-    expectClearedCookieAttributes(clearedCookies, 'cognito_username');
-    expect(doubles.cognito.revokeToken).toHaveBeenCalledWith(
-      cookieValue(refreshedCookies, 'refresh_token'),
-    );
+    for (const name of ['access_token', 'refresh_token', 'cognito_username']) {
+      expectClearedCookieAttributes(cookieHeaders(logout), name);
+    }
     expectSafeJson(logout.body);
-
-    await request(app.getHttpServer())
+    await http()
       .post('/api/v1/auth/refresh')
       .set('Cookie', [
-        `refresh_token=${refreshedRefreshToken}`,
-        'cognito_username=admin@example.com',
+        `refresh_token=${cookieValue(originalCookies, 'refresh_token')}`,
+        `cognito_username=${cookieValue(originalCookies, 'cognito_username')}`,
       ])
       .expect(401);
     await agent.get('/api/v1/me').expect(401);

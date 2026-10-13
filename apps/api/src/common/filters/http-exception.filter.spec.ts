@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { ApplicationUnauthorizedError } from '../errors/application-conflict.error.js';
 import { HttpExceptionFilter } from './http-exception.filter.js';
 
 function createHost() {
@@ -29,6 +30,44 @@ function createHost() {
 }
 
 describe('HttpExceptionFilter', () => {
+  it('preserves a recoverable refresh 503 without leaking provider details', () => {
+    const context = createHost();
+    new HttpExceptionFilter().catch(
+      new ServiceUnavailableException({
+        code: 'AUTH_REFRESH_UNAVAILABLE',
+        message: 'AWS upstream synthetic-secret',
+        details: { token: 'synthetic-secret' },
+      }),
+      context.host,
+    );
+    expect(context.status).toHaveBeenCalledWith(503);
+    expect(context.json).toHaveBeenCalledWith({
+      statusCode: 503,
+      code: 'AUTH_REFRESH_UNAVAILABLE',
+      message: 'We could not renew your session. Please try again.',
+    });
+  });
+  it.each([
+    ['METRICS_DISABLED', 'Metrics are not configured'],
+    ['METRICS_UNAVAILABLE', 'Metrics are temporarily unavailable'],
+  ])('sanitizes metrics failure %s', (code, message) => {
+    const context = createHost();
+    new HttpExceptionFilter().catch(
+      new ServiceUnavailableException({
+        code,
+        message: 'provider synthetic-secret',
+        details: 'url token',
+        stack: 'secret',
+      }),
+      context.host,
+    );
+    expect(context.status).toHaveBeenCalledWith(503);
+    expect(context.json).toHaveBeenCalledWith({
+      statusCode: 503,
+      code,
+      message,
+    });
+  });
   it('maps known HTTP failures to stable application errors', () => {
     const cases = [
       [
@@ -199,5 +238,66 @@ describe('HttpExceptionFilter', () => {
     expect(JSON.stringify(context.json.mock.calls[0][0])).not.toContain(
       'secret-value',
     );
+  });
+
+  it('enforces enrollment token failures as typed 401 errors', () => {
+    const context = createHost();
+    const exception = new ApplicationUnauthorizedError(
+      'ENROLLMENT_TOKEN_INVALID',
+      'token=secret-value',
+    );
+
+    expect(exception).toBeInstanceOf(UnauthorizedException);
+    expect(exception.getStatus()).toBe(401);
+    expect(exception.code).toBe('ENROLLMENT_TOKEN_INVALID');
+
+    new HttpExceptionFilter().catch(exception, context.host);
+
+    expect(context.status).toHaveBeenCalledWith(401);
+    expect(context.json).toHaveBeenCalledWith({
+      statusCode: 401,
+      code: 'ENROLLMENT_TOKEN_INVALID',
+      message: 'Enrollment token is invalid or expired',
+    });
+    expect(JSON.stringify(context.json.mock.calls[0][0])).not.toContain(
+      'secret-value',
+    );
+  });
+
+  it('forces generic enrollment token errors to safe 401 responses', () => {
+    const context = createHost();
+    const exception = new HttpException(
+      { code: 'ENROLLMENT_TOKEN_INVALID', message: 'token=secret-value' },
+      409,
+    );
+
+    new HttpExceptionFilter().catch(exception, context.host);
+
+    expect(context.status).toHaveBeenCalledWith(401);
+    expect(context.json).toHaveBeenCalledWith({
+      statusCode: 401,
+      code: 'ENROLLMENT_TOKEN_INVALID',
+      message: 'Enrollment token is invalid or expired',
+    });
+    expect(JSON.stringify(context.json.mock.calls[0][0])).not.toContain(
+      'secret-value',
+    );
+  });
+
+  it('enforces resource-not-found errors as 404 responses', () => {
+    const context = createHost();
+    const exception = new HttpException(
+      { code: 'RESOURCE_NOT_FOUND', message: 'internal lookup details' },
+      409,
+    );
+
+    new HttpExceptionFilter().catch(exception, context.host);
+
+    expect(context.status).toHaveBeenCalledWith(404);
+    expect(context.json).toHaveBeenCalledWith({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Resource not found',
+    });
   });
 });

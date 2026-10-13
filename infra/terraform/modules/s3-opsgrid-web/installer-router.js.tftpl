@@ -1,0 +1,47 @@
+function handler(event) {
+  var request = event.request;
+  var path = request.uri;
+  var host = request.headers.host ? request.headers.host.value.toLowerCase().split(':')[0] : '';
+
+  // Keep installer routing hostname-scoped; never redirect normal SPA routes.
+  if (host === ${installer_hostname_json}) {
+    var releaseBase = 'https://github.com/caophi562005/cloud-with-data-center-observability-and-operations-platform/releases/latest/download/';
+    var target = path === '/linux' ? releaseBase + 'install-launcher.sh' :
+      path === '/windows' ? releaseBase + 'install-launcher.ps1' : null;
+
+    if (target && (request.method === 'GET' || request.method === 'HEAD')) {
+      // Fixed HTTPS targets only. Never forward query strings, tokens or cookies.
+      return {
+        statusCode: 302,
+        statusDescription: 'Found',
+        headers: {
+          location: { value: target },
+          'cache-control': { value: 'no-store' },
+          'referrer-policy': { value: 'no-referrer' }
+        }
+      };
+    }
+
+    // Unknown installer paths must not fall through to the SPA or S3.
+    return {
+      statusCode: 404,
+      statusDescription: 'Not Found',
+      headers: {
+        'cache-control': { value: 'no-store' },
+        'referrer-policy': { value: 'no-referrer' }
+      }
+    };
+  }
+
+  // This function is also attached to /assets/* to reject installer-host paths.
+  // Preserve that behavior's original, non-rewriting SPA asset requests.
+  if (path.indexOf('/assets/') === 0) {
+    return request;
+  }
+
+  var leaf = path.substring(path.lastIndexOf('/') + 1);
+  if ((request.method === 'GET' || request.method === 'HEAD') && leaf.indexOf('.') === -1) {
+    request.uri = '/index.html';
+  }
+  return request;
+}

@@ -1,0 +1,180 @@
+groups:
+  - name: opsgrid-vm-health
+    interval: 60s
+    rules:
+      # Gateway-authenticated org/VM/agent labels only; no client identity aliases.
+      # Raw-source freshness is 300s (Task8 policy), never a derived timestamp.
+      # AMP has no Vm.os/current-agent DB join. Preserve agent pairing until the
+      # final VM max; slow resource gathers may legitimately interrupt a hold.
+      - alert: VMHighCPU
+        expr: |
+          max by (organization_id, vm_id) (
+            100 - avg by (organization_id, vm_id, agent_id) (
+              avg_over_time(cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""}[5m])
+              and ((cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""} >= 0) <= 100)
+              and (time() - timestamp(cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""}) <= 300)
+              and (timestamp(cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""}) <= time())
+              and (min_over_time(cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""}[5m]) >= 0)
+              and (max_over_time(cpu_usage_idle{cpu="cpu-total",organization_id!="",vm_id!="",agent_id!=""}[5m]) <= 100)
+            )
+          ) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: VM CPU usage is above 80 percent
+          description: Native CPU busy usage from five-minute average idle percent has exceeded 80 percent for five minutes. Only valid fresh CPU samples qualify; this is not the API immediate health policy.
+
+      # Default vector matching retains ALL native labels before division.
+      # Finite available >=0 / finite total >0, ratio <=1, is equivalent to
+      # Task8's available <= total gate; invalid data is omitted, never clamped.
+      - alert: VMHighMemory
+        expr: |
+          max by (organization_id, vm_id) (
+            max by (organization_id, vm_id, agent_id) (
+              100 * (1 - ((
+                (
+                  ((mem_available{organization_id!="",vm_id!="",agent_id!=""} >= 0) < +Inf)
+                  and (time() - timestamp(mem_available{organization_id!="",vm_id!="",agent_id!=""}) <= 300)
+                  and (timestamp(mem_available{organization_id!="",vm_id!="",agent_id!=""}) <= time())
+                )
+                / (
+                  ((mem_total{organization_id!="",vm_id!="",agent_id!=""} > 0) < +Inf)
+                  and (time() - timestamp(mem_total{organization_id!="",vm_id!="",agent_id!=""}) <= 300)
+                  and (timestamp(mem_total{organization_id!="",vm_id!="",agent_id!=""}) <= time())
+                )
+              ) <= 1))
+            )
+          ) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: VM memory usage is above 85 percent
+          description: Native available-based RAM usage has exceeded 85 percent for ten minutes. Both same-agent available and positive total samples must be valid and fresh; this is not the API immediate health policy.
+
+      # One cross-OS rule: Linux absolute rw non-pseudo/non-container volumes OR
+      # Windows native drive roots with rw NTFS/ReFS/FAT/FAT32/exFAT volumes.
+      # The OR arms are disjoint by path; no invented OS tag is required.
+      # Timestamp EACH raw selector before OR, never the evaluated union.
+      # Default matching pairs org/VM/agent/path/device/fstype/mode (and any other
+      # retained labels) BEFORE per-agent worst-volume max and final VM max.
+      # Native disk_free is user-available (Unix Bavail), not used/total or
+      # used_percent. As for RAM, a fresh finite nonnegative ratio <=1 bounds
+      # utilization without silently clamping invalid volume pairs.
+      - alert: VMDiskUsageHigh
+        expr: |
+          max by (organization_id, vm_id) (
+            max by (organization_id, vm_id, agent_id) (
+              100 * (1 - ((
+                (
+                  (((
+                    disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    }
+                    or disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    }
+                  ) >= 0) < +Inf)
+                  and (time() - (
+                    timestamp(disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    })
+                    or timestamp(disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    })
+                  ) <= 300)
+                  and ((
+                    timestamp(disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    })
+                    or timestamp(disk_free{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    })
+                  ) <= time())
+                )
+                / (
+                  (((
+                    disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    }
+                    or disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    }
+                  ) > 0) < +Inf)
+                  and (time() - (
+                    timestamp(disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    })
+                    or timestamp(disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    })
+                  ) <= 300)
+                  and ((
+                    timestamp(disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"/.*",device!="",fstype!="",mode="rw",
+                      fstype!~"tmpfs|devtmpfs|devfs|proc|sysfs|overlay|aufs|squashfs|nsfs|tracefs|debugfs|securityfs|configfs|fusectl|mqueue|hugetlbfs|ramfs|autofs|iso9660|cgroup2?",
+                      path!~"/run($|/.*)|/var/lib/(docker|containers)($|/.*)"
+                    })
+                    or timestamp(disk_total{
+                      organization_id!="",vm_id!="",agent_id!="",
+                      path=~"^[A-Za-z]:[\\\\/]?$",device!="",
+                      fstype=~"(?i:ntfs|refs|fat|fat32|exfat)",mode="rw"
+                    })
+                  ) <= time())
+                )
+              ) <= 1))
+            )
+          ) > 85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: VM worst eligible filesystem usage is above 85 percent
+          description: Native user-available-space usage on the worst eligible filesystem has exceeded 85 percent for fifteen minutes. Each full volume pair must be valid and fresh; this is not the API immediate health policy.
+
+      # Raw native delivery presence, not counter value/rate, API contact,
+      # host uptime or service gather errors. A numeric zero sample is present.
+      # Missing identities are remembered for only 24h; expiry can resolve an
+      # alert without reconnection. Never-seen or DB lifecycle state is unknown.
+      - alert: VMDisconnected
+        expr: |
+          max by (organization_id, vm_id) (
+            max_over_time(internal_agent_metrics_gathered{organization_id!="",vm_id!="",agent_id!=""}[24h])
+          )
+          unless on (organization_id, vm_id)
+          max by (organization_id, vm_id) (
+            max_over_time(internal_agent_metrics_gathered{organization_id!="",vm_id!="",agent_id!=""}[5m])
+          )
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Previously observed VM telemetry delivery is missing
+          description: No native internal delivery sample in five minutes; condition persisted five more minutes. This is not proof of machine outage. Never-seen identities do not alert, and 24-hour history expiry can resolve without host recovery. API control contact does not establish telemetry delivery.

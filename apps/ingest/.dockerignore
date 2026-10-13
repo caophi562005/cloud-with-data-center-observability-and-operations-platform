@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+bin
+*.exe
+ingest
+metrics-smoke
+**/*_test.go
+coverage.out
+README.md

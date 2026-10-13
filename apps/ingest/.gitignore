@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+/bin/
+/ingest
+/ingest.exe
+/metrics-smoke
+/metrics-smoke.exe
+/coverage.out
+*.test

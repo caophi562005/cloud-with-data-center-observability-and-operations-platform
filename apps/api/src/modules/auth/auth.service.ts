@@ -7,8 +7,12 @@ import {
 import type { Request, Response } from 'express';
 import { authConfig, type AuthConfig } from '../../config/auth.config.js';
 import { AUTH_COOKIE_NAMES } from '../../common/constants/auth.constants.js';
+import { authRefreshUnavailable } from '../../common/errors/auth-refresh-unavailable.error.js';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type.js';
-import type { CognitoRegistrationResult } from '../../infrastructure/aws/cognito/cognito.types.js';
+import type {
+  CognitoAuthenticationResult,
+  CognitoRegistrationResult,
+} from '../../infrastructure/aws/cognito/cognito.types.js';
 import { CognitoTokenVerifierService } from '../../infrastructure/aws/cognito/cognito-token-verifier.service.js';
 import { CognitoService } from '../../infrastructure/aws/cognito/cognito.service.js';
 import { CacheService } from '../../infrastructure/cache/cache.service.js';
@@ -120,7 +124,10 @@ export class AuthService {
       this.tokenVerifier.verifyIdToken(authentication.idToken),
     ]);
 
-    if (accessClaims.sub !== idClaims.sub) {
+    if (
+      !isNonemptyString(accessClaims.sub) ||
+      accessClaims.sub !== idClaims.sub
+    ) {
       throw unauthorized();
     }
 
@@ -143,7 +150,8 @@ export class AuthService {
       );
     }
     if (this.configuration?.clientSecret) {
-      this.authCookieService.setCognitoUsername(response, input.email);
+      // Email-only Cognito pools require the verified sub for refresh SECRET_HASH.
+      this.authCookieService.setCognitoUsername(response, idClaims.sub);
     }
 
     return { user: toSafeUser(user) };
@@ -167,35 +175,79 @@ export class AuthService {
       throw unauthorized();
     }
 
+    let authentication: CognitoAuthenticationResult;
     try {
-      const authentication = username
+      authentication = username
         ? await this.cognitoService.refreshToken(refreshToken, username)
         : await this.cognitoService.refreshToken(refreshToken);
+    } catch (error) {
+      // Only this boundary can establish that the refresh credential was rejected.
+      if (error instanceof UnauthorizedException) {
+        this.authCookieService.clearAuthCookies(response);
+        throw unauthorized();
+      }
+      throw authRefreshUnavailable();
+    }
+
+    let user: LocalUser | null;
+    let cognitoSub: string;
+    try {
+      if (
+        !isRecord(authentication) ||
+        !isNonemptyString(authentication.accessToken) ||
+        (authentication.idToken !== undefined &&
+          !isNonemptyString(authentication.idToken)) ||
+        (authentication.refreshToken !== undefined &&
+          !isNonemptyString(authentication.refreshToken))
+      ) {
+        throw authRefreshUnavailable();
+      }
+
       const accessClaims = await this.tokenVerifier.verifyAccessToken(
         authentication.accessToken,
       );
-      const user = await this.usersService.findByCognitoSub(accessClaims.sub);
-
-      if (!user) {
-        throw unauthorized();
+      if (
+        !isNonemptyString(accessClaims.sub) ||
+        (this.configuration?.clientSecret && accessClaims.sub !== username)
+      ) {
+        throw authRefreshUnavailable();
       }
-
-      this.authCookieService.setAccessToken(
-        response,
-        authentication.accessToken,
-      );
-      if (authentication.refreshToken) {
-        this.authCookieService.setRefreshToken(
-          response,
-          authentication.refreshToken,
+      if (authentication.idToken) {
+        const idClaims = await this.tokenVerifier.verifyIdToken(
+          authentication.idToken,
         );
+        if (accessClaims.sub !== idClaims.sub) {
+          throw authRefreshUnavailable();
+        }
       }
-
-      return { user: toSafeUser(user) };
-    } catch (error) {
-      this.authCookieService.clearAuthCookies(response);
-      throw error;
+      cognitoSub = accessClaims.sub;
+      user = await this.usersService.findByCognitoSub(cognitoSub);
+    } catch {
+      // Invalid freshly minted tokens, JWKS and database failures are not proof
+      // that the user's original refresh credential is invalid.
+      throw authRefreshUnavailable();
     }
+
+    if (!user) {
+      this.authCookieService.clearAuthCookies(response);
+      throw unauthorized();
+    }
+
+    this.authCookieService.setAccessToken(response, authentication.accessToken);
+    if (
+      authentication.refreshToken &&
+      authentication.refreshToken !== refreshToken
+    ) {
+      this.authCookieService.setRefreshToken(
+        response,
+        authentication.refreshToken,
+      );
+      if (this.configuration?.clientSecret) {
+        this.authCookieService.setCognitoUsername(response, cognitoSub);
+      }
+    }
+    // REFRESH_TOKEN_AUTH normally does not rotate: leave refresh/sub deadlines intact.
+    return { user: toSafeUser(user) };
   }
 
   async logout(request: Request, response: Response): Promise<void> {
@@ -351,6 +403,10 @@ function isRole(value: unknown): value is OrganizationWithRole['role'] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 function unauthorized(): UnauthorizedException {

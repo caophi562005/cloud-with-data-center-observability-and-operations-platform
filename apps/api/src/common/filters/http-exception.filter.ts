@@ -27,6 +27,7 @@ const SAFE_CODES = new Set([
   'VALIDATION_ERROR',
   'AUTH_INVALID_CREDENTIALS',
   'AUTH_UNAUTHORIZED',
+  'AUTH_REFRESH_UNAVAILABLE',
   'AUTH_FORBIDDEN',
   'AUTH_REGISTRATION_PENDING',
   'AUTH_CONFIRMATION_INVALID',
@@ -34,6 +35,12 @@ const SAFE_CODES = new Set([
   'CONFLICT',
   'RATE_LIMITED',
   'NOT_FOUND',
+  'RESOURCE_NOT_FOUND',
+  'VM_HOSTNAME_CONFLICT',
+  'AGENT_ALREADY_ENROLLED',
+  'ENROLLMENT_TOKEN_INVALID',
+  'METRICS_DISABLED',
+  'METRICS_UNAVAILABLE',
   'INTERNAL_ERROR',
 ]);
 
@@ -68,6 +75,8 @@ const SAFE_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Validation failed',
   AUTH_INVALID_CREDENTIALS: 'Invalid credentials',
   AUTH_UNAUTHORIZED: 'Authentication required',
+  AUTH_REFRESH_UNAVAILABLE:
+    'We could not renew your session. Please try again.',
   AUTH_FORBIDDEN: 'Insufficient permissions',
   AUTH_REGISTRATION_PENDING:
     'Registration may already be pending. Request a new confirmation code.',
@@ -76,6 +85,12 @@ const SAFE_MESSAGES: Record<string, string> = {
   CONFLICT: 'Conflict',
   RATE_LIMITED: 'Too many requests',
   NOT_FOUND: 'Resource not found',
+  RESOURCE_NOT_FOUND: 'Resource not found',
+  VM_HOSTNAME_CONFLICT: 'Hostname already exists',
+  AGENT_ALREADY_ENROLLED: 'Agent is already enrolled',
+  ENROLLMENT_TOKEN_INVALID: 'Enrollment token is invalid or expired',
+  METRICS_DISABLED: 'Metrics are not configured',
+  METRICS_UNAVAILABLE: 'Metrics are temporarily unavailable',
   INTERNAL_ERROR: 'Internal server error',
 };
 
@@ -119,6 +134,18 @@ function statusOf(exception: unknown, payload: ExceptionPayload): number {
 
 function safeCode(value: unknown): string | undefined {
   return typeof value === 'string' && SAFE_CODES.has(value) ? value : undefined;
+}
+
+function statusForCode(statusCode: number, code: string | undefined): number {
+  if (code === 'ENROLLMENT_TOKEN_INVALID') {
+    return HttpStatus.UNAUTHORIZED;
+  }
+
+  if (code === 'RESOURCE_NOT_FOUND') {
+    return HttpStatus.NOT_FOUND;
+  }
+
+  return statusCode;
 }
 
 function safeValidationIssues(
@@ -214,13 +241,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = http.getResponse<Response>();
     const request = http.getRequest<RequestContext>();
     const payload = payloadOf(exception);
-    const statusCode = statusOf(exception, payload);
+    const explicitCode = safeCode(payload.code);
+    const statusCode = statusForCode(
+      statusOf(exception, payload),
+      explicitCode,
+    );
     const defaults = DEFAULT_ERRORS[String(statusCode)] ??
       DEFAULT_ERRORS[String(HttpStatus.INTERNAL_SERVER_ERROR)] ?? {
         code: 'INTERNAL_ERROR',
         message: 'Internal server error',
       };
-    const code = safeCode(payload.code) ?? defaults.code;
+    const code = explicitCode ?? defaults.code;
     const apiError: ApiError = {
       statusCode,
       code,

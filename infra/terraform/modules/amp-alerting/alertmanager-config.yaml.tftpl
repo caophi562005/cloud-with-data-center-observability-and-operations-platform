@@ -1,0 +1,19 @@
+route:
+  receiver: opsgrid-sns
+  group_by: [organization_id, vm_id, alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+templates:
+  - opsgrid_sns
+
+receivers:
+  - name: opsgrid-sns
+    sns_configs:
+      - topic_arn: ${jsonencode(topic_arn)}
+        sigv4:
+          region: ${jsonencode(region)}
+        send_resolved: true
+        subject: 'OpsGrid VM alerts'
+        message: '{{ template "opsgrid.sns.message" . }}'

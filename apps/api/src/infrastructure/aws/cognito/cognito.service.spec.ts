@@ -6,7 +6,10 @@ import {
   RevokeTokenCommand,
   SignUpCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthConfig } from '../../../config/auth.config.js';
 import { CognitoSecretHashService } from './cognito-secret-hash.service.js';
@@ -186,7 +189,7 @@ describe('CognitoService', () => {
     });
   });
 
-  it('uses REFRESH_TOKEN_AUTH and conditionally adds username and secret hash', async () => {
+  it('uses REFRESH_TOKEN_AUTH and hashes the supplied verified subject for an email-only pool', async () => {
     const { send, service } = createService();
     send.mockResolvedValue({
       AuthenticationResult: {
@@ -197,7 +200,7 @@ describe('CognitoService', () => {
     });
 
     await expect(
-      service.refreshToken('refresh-token', 'admin@example.com'),
+      service.refreshToken('refresh-token', 'cognito-sub-1'),
     ).resolves.toEqual({
       accessToken: 'new-access-token',
       idToken: 'new-id-token',
@@ -210,8 +213,8 @@ describe('CognitoService', () => {
       ClientId: 'client-id',
       AuthParameters: {
         REFRESH_TOKEN: 'refresh-token',
-        USERNAME: 'admin@example.com',
-        SECRET_HASH: '98ZPVquY3OpS4HbTpuMB2BzhAXqjhGV7aWQR/+YRV+A=',
+        USERNAME: 'cognito-sub-1',
+        SECRET_HASH: 'vgoAD9bGH1LBXQszwlyD02ZKfaZQoY/mgxmz+Bq5n1g=',
       },
     });
   });
@@ -281,7 +284,7 @@ describe('CognitoService', () => {
     });
   });
 
-  it('maps refresh SDK failures to a safe unauthorized error', async () => {
+  it('does not infer permanent refresh rejection from raw error messages', async () => {
     const { send, service } = createService();
     send.mockRejectedValue(
       new Error(
@@ -293,16 +296,16 @@ describe('CognitoService', () => {
       .refreshToken('refresh-token', 'admin@example.com')
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(UnauthorizedException);
-    expect((error as UnauthorizedException).getResponse()).toEqual({
-      code: 'AUTH_UNAUTHORIZED',
-      message: 'Authentication required',
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toEqual({
+      code: 'AUTH_REFRESH_UNAVAILABLE',
+      message: 'We could not renew your session. Please try again.',
     });
     expect((error as Error).message).not.toContain('aws-secret');
     expect((error as Error).message).not.toContain('refresh-token');
   });
 
-  it('maps a refresh response without an access token to a safe unauthorized error', async () => {
+  it('maps a refresh response without an access token to sanitized unavailability', async () => {
     const { send, service } = createService();
     send.mockResolvedValue({ AuthenticationResult: { IdToken: 'id-token' } });
 
@@ -310,11 +313,147 @@ describe('CognitoService', () => {
       .refreshToken('refresh-token', 'admin@example.com')
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(UnauthorizedException);
-    expect((error as UnauthorizedException).getResponse()).toEqual({
-      code: 'AUTH_UNAUTHORIZED',
-      message: 'Authentication required',
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toEqual({
+      code: 'AUTH_REFRESH_UNAVAILABLE',
+      message: 'We could not renew your session. Please try again.',
     });
+  });
+
+  it.each([
+    'NotAuthorizedException',
+    'UserNotFoundException',
+    'UserNotConfirmedException',
+  ])(
+    'maps known permanent refresh rejection %s to sanitized 401',
+    async (name) => {
+      const { send, service } = createService();
+      send.mockRejectedValue({
+        name,
+        message: 'refresh_token=secret awsRequestId=secret',
+      });
+
+      await expect(
+        service.refreshToken('refresh-token', 'cognito-sub-1'),
+      ).rejects.toMatchObject({
+        status: 401,
+        response: {
+          code: 'AUTH_UNAUTHORIZED',
+          message: 'Authentication required',
+        },
+      });
+    },
+  );
+
+  it.each([
+    new Error('network refresh_token=secret'),
+    { name: 'TimeoutError', message: 'request secret' },
+    { name: 'TooManyRequestsException', $metadata: { httpStatusCode: 429 } },
+    { name: 'LimitExceededException' },
+    { name: 'InternalErrorException', $metadata: { httpStatusCode: 500 } },
+    { name: 'ServiceUnavailableException', $metadata: { httpStatusCode: 503 } },
+    { name: 'InvalidParameterException', message: 'bad config secret' },
+    { name: 'ResourceNotFoundException' },
+    { name: 'UnknownException' },
+  ])(
+    'maps retryable and unknown refresh failures %# to safe 503',
+    async (failure) => {
+      const { send, service } = createService();
+      send.mockRejectedValue(failure);
+
+      await expect(
+        service.refreshToken('refresh-token', 'cognito-sub-1'),
+      ).rejects.toMatchObject({
+        status: 503,
+        response: {
+          code: 'AUTH_REFRESH_UNAVAILABLE',
+          message: 'We could not renew your session. Please try again.',
+        },
+      });
+    },
+  );
+
+  it.each([
+    {},
+    { ChallengeName: 'CUSTOM_CHALLENGE' },
+    { AuthenticationResult: { AccessToken: '' } },
+    { AuthenticationResult: { AccessToken: 123 } },
+    { AuthenticationResult: { AccessToken: 'access', IdToken: '' } },
+    { AuthenticationResult: { AccessToken: 'access', RefreshToken: 123 } },
+  ])(
+    'rejects malformed refresh responses %# as provider unavailability',
+    async (providerResponse) => {
+      const { send, service } = createService();
+      send.mockResolvedValue(providerResponse);
+
+      await expect(
+        service.refreshToken('refresh-token', 'cognito-sub-1'),
+      ).rejects.toMatchObject({
+        status: 503,
+        response: {
+          code: 'AUTH_REFRESH_UNAVAILABLE',
+          message: 'We could not renew your session. Please try again.',
+        },
+      });
+    },
+  );
+
+  it('sanitizes a refresh secret-hash configuration failure as 503', async () => {
+    const send = vi.fn();
+    const hashes = new CognitoSecretHashService(confidentialConfig);
+    vi.spyOn(hashes, 'calculate').mockImplementation(() => {
+      throw new Error('configuration secret');
+    });
+    const service = new CognitoService(
+      confidentialConfig,
+      { send } as unknown as CognitoIdentityProviderClient,
+      hashes,
+    );
+
+    await expect(
+      service.refreshToken('refresh-token', 'cognito-sub-1'),
+    ).rejects.toMatchObject({
+      status: 503,
+      response: {
+        code: 'AUTH_REFRESH_UNAVAILABLE',
+        message: 'We could not renew your session. Please try again.',
+      },
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('bounds the refresh SDK call to ten seconds and sanitizes cancellation as 503', async () => {
+    vi.useFakeTimers();
+    try {
+      const { send, service } = createService();
+      send.mockImplementation(
+        (_command, options: { abortSignal?: AbortSignal } | undefined) =>
+          new Promise((_resolve, reject) => {
+            options?.abortSignal?.addEventListener(
+              'abort',
+              () => reject({ name: 'AbortError', message: 'request secret' }),
+              { once: true },
+            );
+          }),
+      );
+      const outcome = service
+        .refreshToken('refresh-token', 'cognito-sub-1')
+        .catch((error: unknown) => error);
+      const options = send.mock.calls[0]?.[1] as
+        { abortSignal?: AbortSignal } | undefined;
+      expect(options?.abortSignal).toBeInstanceOf(AbortSignal);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await outcome).toMatchObject({
+        status: 503,
+        response: {
+          code: 'AUTH_REFRESH_UNAVAILABLE',
+          message: 'We could not renew your session. Please try again.',
+        },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('swallows revoke failures without exposing SDK details', async () => {
