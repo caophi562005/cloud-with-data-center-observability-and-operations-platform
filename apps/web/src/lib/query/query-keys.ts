@@ -13,6 +13,9 @@ export const queryKeys = {
   monitoringCatalog: (organizationId: string) => ["monitoring-catalog", organizationId] as const,
   vmMonitoringConfig: (organizationId: string, vmId: string) => ["vm-monitoring-config", organizationId, vmId] as const,
   agentStatus: (organizationId: string, vmId: string) => ["agent-status", organizationId, vmId] as const,
+  integrationMetrics: (organizationId: string, vmId: string, instanceId: string) => ["integration-metrics", organizationId, vmId, instanceId] as const,
+  integrationMetricsCurrent: (organizationId: string, vmId: string, instanceId: string) => ["integration-metrics", organizationId, vmId, instanceId, "current"] as const,
+  integrationMetricsHistory: (organizationId: string, vmId: string, instanceId: string, range: string, metric: string, entity: string | null) => ["integration-metrics", organizationId, vmId, instanceId, "history", range, metric, entity] as const,
   vmCurrentMetrics: (organizationId: string, vmId: string) => ["vm-metrics", organizationId, vmId, "current"] as const,
   vmMetricsRange: (organizationId: string, vmId: string, range: string) => ["vm-metrics", organizationId, vmId, "range", range] as const,
 };

@@ -28,7 +28,12 @@ export type IntegrationSettings = {
   };
   mysql: MonitoringTlsSettings & { host: string; port: number };
   nginx: MonitoringTlsSettings & { statusUrl: string; oauthTokenUrl?: string };
-  docker: { endpoint: string; acknowledgePrivilegedAccess: true };
+  docker: {
+    endpoint: string;
+    acknowledgePrivilegedAccess: true;
+    collectContainerMetrics?: boolean;
+    containerNames?: string[];
+  };
 };
 
 export type IntegrationInstance = {

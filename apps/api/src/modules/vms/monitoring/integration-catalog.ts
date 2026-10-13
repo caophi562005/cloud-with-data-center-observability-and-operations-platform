@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { NATIVE_INTEGRATION_FILTERS } from './integration-metric-profiles.js';
 import type { IntegrationKind, MonitoringSecretField, SupportedAgentOs } from './monitoring.types.js';
 
 export const MONITORING_PROFILE_KEY = 'telegraf-native-v1' as const;
@@ -66,7 +67,10 @@ export const integrationSettingsSchemas = {
   docker: z.object({
     endpoint: z.enum(['unix:///var/run/docker.sock', 'npipe:////./pipe/docker_engine']),
     acknowledgePrivilegedAccess: z.literal(true),
-  }).strict(),
+    collectContainerMetrics: z.boolean().default(false),
+    containerNames: z.array(z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/))
+      .max(32).default([]).refine((names) => new Set(names).size === names.length),
+  }).strict().refine((settings) => !settings.collectContainerMetrics || settings.containerNames.length > 0),
 } as const;
 
 export type IntegrationCatalogEntry = {
@@ -77,6 +81,7 @@ export type IntegrationCatalogEntry = {
   compatibility: typeof TELEGRAF_VERSION;
   settingsFields: readonly string[];
   secretFields: readonly MonitoringSecretField[];
+  measurements: readonly string[];
   fields: readonly string[];
   tags: readonly string[];
   warning?: string;
@@ -86,20 +91,20 @@ const commonTlsFields = ['tls', 'tlsCaPath', 'tlsCertPath', 'tlsKeyPath'] as con
 export const INTEGRATION_CATALOG = {
   redis: { kind: 'redis', title: 'Redis', plugin: 'redis', supportedOs, compatibility: TELEGRAF_VERSION,
     settingsFields: ['host', 'port', ...commonTlsFields], secretFields: ['username', 'password', 'tlsKeyPassword'],
-    fields: ['clients', 'used_memory'], tags: ['integration_instance_id'] },
+    ...NATIVE_INTEGRATION_FILTERS.redis },
   postgresql: { kind: 'postgresql', title: 'PostgreSQL', plugin: 'postgresql', supportedOs, compatibility: TELEGRAF_VERSION,
     settingsFields: ['host', 'port', 'database', 'sslMode', 'tlsCaPath', 'tlsCertPath', 'tlsKeyPath'],
-    secretFields: ['username', 'password'], fields: ['numbackends'], tags: ['integration_instance_id', 'db'] },
+    secretFields: ['username', 'password'], ...NATIVE_INTEGRATION_FILTERS.postgresql },
   mysql: { kind: 'mysql', title: 'MySQL / MariaDB', plugin: 'mysql', supportedOs, compatibility: TELEGRAF_VERSION,
     settingsFields: ['host', 'port', ...commonTlsFields], secretFields: ['username', 'password', 'tlsKeyPassword'],
-    fields: ['threads_connected'], tags: ['integration_instance_id'] },
+    ...NATIVE_INTEGRATION_FILTERS.mysql },
   nginx: { kind: 'nginx', title: 'Nginx stub status', plugin: 'nginx', supportedOs, compatibility: TELEGRAF_VERSION,
     settingsFields: ['statusUrl', 'oauthTokenUrl', ...commonTlsFields],
-    secretFields: ['oauthClientId', 'oauthClientSecret', 'tlsKeyPassword'], fields: ['active'], tags: ['integration_instance_id'],
+    secretFields: ['oauthClientId', 'oauthClientSecret', 'tlsKeyPassword'], ...NATIVE_INTEGRATION_FILTERS.nginx,
     warning: 'Native Nginx supports OAuth client credentials and mutual TLS; Basic Auth URL userinfo is not supported by this template.' },
   docker: { kind: 'docker', title: 'Docker engine', plugin: 'docker', supportedOs, compatibility: TELEGRAF_VERSION,
-    settingsFields: ['endpoint', 'acknowledgePrivilegedAccess'], secretFields: [], fields: ['n_containers_running'],
-    tags: ['integration_instance_id'], warning: 'Local Docker socket access grants administrative container/host privileges. Explicit acknowledgement is required.' },
+    settingsFields: ['endpoint', 'acknowledgePrivilegedAccess', 'collectContainerMetrics', 'containerNames'],
+    secretFields: [], ...NATIVE_INTEGRATION_FILTERS.docker, warning: 'Local Docker socket access grants administrative container/host privileges. Explicit acknowledgement is required.' },
 } as const satisfies Record<IntegrationKind, IntegrationCatalogEntry>;
 
 // Source-derived contracts; runtime collection/serialization is still UNVERIFIED.

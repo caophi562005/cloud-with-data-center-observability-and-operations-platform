@@ -8,12 +8,14 @@ describe("VM inventory domain presentation", () => {
   it("filters hostname, status, and tags with AND semantics", () => {
     expect(filterVms(inventoryFixtures, { ...noFilters, query: "DB-PRIMARY" }).map((vm) => vm.hostname)).toEqual(["db-primary-01"]);
     expect(filterVms(inventoryFixtures, { ...noFilters, status: "WARNING" }).map((vm) => vm.hostname)).toEqual(["api-prod-01"]);
+    expect(filterVms([{ ...inventoryFixtures[0], hostState: "unknown" }], { ...noFilters, status: "HEALTHY" })).toEqual([]);
+    expect(filterVms(inventoryFixtures, { ...noFilters, status: "unknown" }).map((vm) => vm.hostname)).toEqual(["new-node-01"]);
     expect(filterVms(inventoryFixtures, { ...noFilters, tags: ["site:iad-01", "env:production"] }).map((vm) => vm.hostname)).toEqual(["api-prod-01", "db-primary-01"]);
     expect(filterVms(inventoryFixtures, { ...noFilters, tags: ["site:iad-01", "role:database"] }).map((vm) => vm.hostname)).toEqual(["db-primary-01"]);
   });
   it("groups by operating system, status, derived tag key, and untagged state", () => {
     expect(groupVms(inventoryFixtures, "os").map((group) => group.label)).toEqual(["Linux", "Windows"]);
-    expect(groupVms(inventoryFixtures, "status").map((group) => group.label)).toEqual(["Healthy", "Warning", "Critical", "Disconnected"]);
+    expect(groupVms(inventoryFixtures, "status").map((group) => group.label)).toEqual(["Healthy", "Warning", "Critical", "Disconnected", "Unknown host state"]);
     expect(groupVms(inventoryFixtures, "tag:site").some((group) => group.label === "No site tag")).toBe(true);
     expect(groupVms(inventoryFixtures, "untagged").map((group) => group.label)).toEqual(["Tagged", "Untagged"]);
     expect(groupVms(inventoryFixtures, "none")[0]?.vms).toHaveLength(5);

@@ -6,7 +6,7 @@ export type IntegrationSettings = {
   postgresql: { host: string; port: number; database: string; sslMode: "disable" | "verify-full"; tlsCaPath?: string; tlsCertPath?: string; tlsKeyPath?: string };
   mysql: MonitoringTlsSettings & { host: string; port: number };
   nginx: MonitoringTlsSettings & { statusUrl: string; oauthTokenUrl?: string };
-  docker: { endpoint: string; acknowledgePrivilegedAccess: true };
+  docker: { endpoint: string; acknowledgePrivilegedAccess: true; collectContainerMetrics?: boolean; containerNames?: string[] };
 };
 export type IntegrationInstance = {
   [K in IntegrationKind]: { id: string; kind: K; enabled: boolean; intervalSeconds: number; settings: IntegrationSettings[K] }
@@ -81,7 +81,7 @@ export type MonitoringCatalog = {
 // may construct the API's literal true. Raw credential patches live locally only.
 export type IntegrationDraft = Exclude<IntegrationInstance, { kind: "docker" }> | {
   id: string; kind: "docker"; enabled: boolean; intervalSeconds: number;
-  settings: { endpoint: string; acknowledgePrivilegedAccess: boolean };
+  settings: { endpoint: string; acknowledgePrivilegedAccess: boolean; collectContainerMetrics?: boolean; containerNames?: string[] };
 };
 export type MonitoringDraft = Omit<MonitoringDefinition, "integrations"> & { integrations: IntegrationDraft[] };
 export type MonitoringFieldError = { fieldId: string; message: string };

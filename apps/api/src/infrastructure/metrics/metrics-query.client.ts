@@ -182,7 +182,9 @@ export class MetricsQueryClient {
       const url = new URL(
         `${config.baseUrl.replace(/\/+$/, '')}/api/v1/${endpoint}`,
       );
-      url.search = new URLSearchParams(params).toString();
+      const isQuery = endpoint === 'query' || endpoint === 'query_range';
+      const form = new URLSearchParams(params);
+      if (!isQuery) url.search = form.toString();
       const deadline = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           // Abort listeners can reject with another error before the race settles.
@@ -202,7 +204,12 @@ export class MetricsQueryClient {
           } else if (config.auth.mode === 'bearer') {
             headers.Authorization = `Bearer ${config.auth.token}`;
           }
+          if (isQuery) {
+            headers['Content-Type'] = 'application/x-www-form-urlencoded';
+          }
           const response = await fetch(url, {
+            method: isQuery ? 'POST' : 'GET',
+            ...(isQuery ? { body: form } : {}),
             redirect: 'error',
             signal: abort.signal,
             headers,

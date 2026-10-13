@@ -29,7 +29,7 @@ describe("browser-local timestamps", () => {
     expect(formatLastSeen("2026-07-04T12:00:00Z")).toBe("Jul 4, 8:00 AM");
   });
 
-  it("retains the missing-heartbeat state", () => {
-    expect(formatLastSeen(null)).toBe("No heartbeat recorded");
+  it("retains the missing-timestamp state", () => {
+    expect(formatLastSeen(null)).toBe("Not recorded");
   });
 });

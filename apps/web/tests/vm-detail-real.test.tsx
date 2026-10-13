@@ -5,12 +5,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/lib/query/query-keys";
 import type { Vm } from "../src/features/vms/vm.types";
-import { linuxCapabilities, windowsCapabilities, unknownCapabilities } from "./fixtures/vms";
+import { linuxCapabilities, windowsCapabilities, unknownCapabilities, nativeTelemetry, unknownTelemetry } from "./fixtures/vms";
 
 const tenant = vi.hoisted(() => ({ id: "org-one" as string | null }));
 vi.mock("../src/app/providers/app-providers", () => ({ useTenant: () => ({ currentOrganization: tenant.id ? { id: tenant.id } : null }) }));
 const vmId = "a8910fdd-77c8-4050-b7f8-6c0123456789";
-const vm: Vm = { id: vmId, hostname: "real-only-host", osType: "Linux", osVersion: "Linux", ipAddress: "—", status: "DISCONNECTED", tags: { site: "sea" }, tagIds: { site: "tag-one" }, agentStatus: "ACTIVE", createdAt: "2026-10-01T00:00:00Z", lastSeenAt: null, metrics: null, metricsState: "empty" };
+const vm: Vm = { ...unknownTelemetry, agent: null, id: vmId, hostname: "real-only-host", osType: "Linux", osVersion: "Linux", ipAddress: "—", status: "DISCONNECTED", tags: { site: "sea" }, tagIds: { site: "tag-one" }, agentStatus: "ACTIVE", createdAt: "2026-10-01T00:00:00Z", lastSeenAt: null, metrics: null, metricsState: "empty" };
 afterEach(() => { tenant.id = "org-one"; vi.restoreAllMocks(); });
 async function renderDetail(client: QueryClient, id = vmId) {
   const { VmDetailPage } = await import("../src/features/vms/pages/vm-detail-page");
@@ -47,31 +47,36 @@ describe("real detail rendering", () => {
     expect(markup).toContain("real-only-host"); expect(markup).toContain(code === "METRICS_DISABLED" ? "Metrics integration is disabled" : "Current metrics are unavailable");
     expect(markup).not.toContain("No fresh telemetry samples"); expect(markup).toContain("Retry telemetry charts"); client.clear();
   });
-  it("keeps agent enrollment separate from disconnected health", async () => {
+  it("keeps absent enrollment and current telemetry neutral despite disconnected inventory", async () => {
     const client = new QueryClient();
     client.setQueryData(queryKeys.vm("org-one", vmId), { ...vm, agentStatus: null });
     try {
       const markup = await renderDetail(client);
-      expect(markup).toContain("Disconnected");
-      expect(markup).toContain("Connect agent");
-      expect(markup).toContain("Inventory record");
-      expect(markup).not.toContain("Agent enrolled");
+      expect(markup).toContain("Unknown host state");
+      expect(markup).not.toContain(">Disconnected<");
+      expect(markup).toMatch(/>Credential<\/dt><dd[^>]*>Not reported<\/dd>/);
+      expect(markup).toContain("Reinstall locally");
+      expect(markup).toContain("Recover agent");
+      expect(markup).toContain('id="vm-inventory-heading"');
     } finally { client.clear(); }
   });
 
   it("renders actual metric zeros, nullable dashes, normalized chart samples and four tabs", async () => {
-    const client = new QueryClient(); client.setQueryData(queryKeys.vm("org-one", vmId), vm);
-    client.setQueryData(queryKeys.vmCurrentMetrics("org-one", vmId), { sampledAt: "2026-10-04T00:00:00Z", lastSeenAt: null, status: "WARNING", metricsState: "available", metrics: { cpu: 0, memory: null, disk: 84, networkRx: 1.5, networkTx: null, load: 0, uptimeHours: 49 } });
-    client.setQueryData(queryKeys.vmMetricsRange("org-one", vmId, "1h"), { from: "2026-10-04T00:00:00Z", to: "2026-10-04T01:00:00Z", step: 60, series: { cpu: [{ timestamp: "2026-10-04T00:00:00Z", value: 0 }, { timestamp: "2026-10-04T00:01:00Z", value: null }], memory: [], disk: [], networkRx: [], networkTx: [], load: [] } });
+    const client = new QueryClient(); client.setQueryData(queryKeys.vm("org-one", vmId), { ...vm, ...nativeTelemetry, lastSeenAt: "2026-10-03T00:00:00Z" });
+    client.setQueryData(queryKeys.vmCurrentMetrics("org-one", vmId), { ...nativeTelemetry, hostState: "WARNING", sampledAt: "2026-10-04T00:00:00Z", lastSeenAt: null, status: "WARNING", metricsState: "available", metrics: { cpu: 0, memory: null, disk: 84, networkRx: 1.5, networkTx: null, load: 0, uptimeHours: 49 } });
+    client.setQueryData(queryKeys.vmMetricsRange("org-one", vmId, "1h"), { ...nativeTelemetry, metricsState: "available", from: "2026-10-04T00:00:00Z", to: "2026-10-04T01:00:00Z", step: 60, series: { cpu: [{ timestamp: "2026-10-04T00:00:00Z", value: 0 }, { timestamp: "2026-10-04T00:01:00Z", value: null }], memory: [], disk: [], networkRx: [], networkTx: [], load: [] } });
     const markup = await renderDetail(client);
     expect(markup).toContain("real-only-host"); expect(markup).toContain("0.0%"); expect(markup).toContain("—"); expect(markup).toContain("View CPU utilization samples");
+    expect(markup).toContain(">Warning<");
+    expect(markup).toMatch(/>Last metric delivery \([^<]+\)<\/dt><dd[^>]*>Not reported<\/dd>/);
     expect(markup).toContain(`Timestamp (${Intl.DateTimeFormat().resolvedOptions().timeZone})`); expect(markup).toContain("Missing"); expect(markup).toContain("7d"); expect(markup).not.toContain("hard-coded snapshot"); client.clear();
   });
 });
 
 // Consumer tests catch unsupported-as-missing/zero and capability/provider precedence regressions.
-const currentFixture = { sampledAt: "2026-10-04T00:00:00Z", lastSeenAt: null, status: "HEALTHY", metricsState: "available", metrics: { cpu: 0, memory: 2, disk: 3, networkRx: 0, networkTx: 5, load: 9, uptimeHours: 49 } };
+const currentFixture = { ...nativeTelemetry, sampledAt: "2026-10-04T00:00:00Z", lastSeenAt: null, status: "HEALTHY", metricsState: "available", metrics: { cpu: 0, memory: 2, disk: 3, networkRx: 0, networkTx: 5, load: 9, uptimeHours: 49 } };
 const rangeFixture = {
+  ...nativeTelemetry, metricsState: "available",
   from: "2026-10-04T00:00:00Z", to: "2026-10-04T01:00:00Z", step: 60,
   series: Object.fromEntries(["cpu", "memory", "disk", "networkRx", "networkTx", "load"].map((key) => [key, [{ timestamp: "2026-10-04T00:00:00Z", value: 0 }, { timestamp: "2026-10-04T00:01:00Z", value: null }, { timestamp: "2026-10-04T00:02:00Z", value: 2 }]])),
 };
@@ -95,7 +100,7 @@ describe("capability detail presentation", () => {
       expect(markup).not.toContain("View System load samples");
       expect(markup).not.toContain('aria-label="System load telemetry samples"');
       expect(markup.match(/<svg[^>]*role="img"/g)).toHaveLength(5);
-      for (const [label, value] of [["CPU", "0.0%"], ["Memory", "2.0%"], ["Disk", "3.0%"], ["Network RX", "0.0 Mbps"], ["Network TX", "5.0 Mbps"], ["Uptime", "2d 1h"]]) expect(metricCard(markup, label)).toContain(value);
+      for (const [label, value] of [["CPU", "0.0%"], ["Memory", "2.0%"], ["Disk", "3.0%"], ["Network RX / TX", "0.0 / 5.0"], ["Uptime", "2d 1h"]]) expect(metricCard(markup, label)).toContain(value);
       expect(markup).toContain("Missing");
       expect(markup.match(/<circle/g)).toHaveLength(10); // Null splits each supported chart into two zero/2 samples.
     } finally { client.clear(); }
@@ -103,7 +108,7 @@ describe("capability detail presentation", () => {
   it.each(["ACTIVE", "REVOKED"] as const)("unknown reason leaves %s agent lifecycle unchanged", async (agentStatus) => {
     const client = new QueryClient(); seedMetrics(client, unknownCapabilities);
     client.setQueryData(queryKeys.vm("org-one", vmId), { ...vm, agentStatus });
-    client.setQueryData(queryKeys.vmCurrentMetrics("org-one", vmId), { ...currentFixture, status: "DISCONNECTED", sampledAt: null, metricsState: "empty", metricsCapabilities: unknownCapabilities });
+    client.setQueryData(queryKeys.vmCurrentMetrics("org-one", vmId), { ...currentFixture, ...unknownTelemetry, hostState: "unsupported", telemetryDelivery: "unsupported", status: "DISCONNECTED", sampledAt: null, lastSeenAt: null, metricsState: "unsupported", metricsCapabilities: unknownCapabilities });
     try {
       const markup = await renderDetail(client);
       expect(markup).toContain("Unsupported platform");
@@ -111,9 +116,11 @@ describe("capability detail presentation", () => {
       expect(markup).not.toContain('role="img"');
       expect(markup).not.toContain("telemetry samples</summary>");
       expect(metricCard(markup, "CPU")).toContain("N/A");
-      expect(markup).toContain(agentStatus === "ACTIVE" ? "Agent enrolled" : "Connect agent");
-      expect(markup.includes("Agent enrolled")).toBe(agentStatus === "ACTIVE");
-      expect(markup).toContain("Disconnected");
+      expect(markup).toMatch(new RegExp(`>Credential<\\/dt><dd[^>]*>${agentStatus}<\\/dd>`));
+      expect(markup).toContain("Reinstall locally");
+      expect(markup).toContain("Recover agent");
+      expect(markup).toContain("Unsupported host state");
+      expect(markup).not.toContain(">Disconnected<");
     } finally { client.clear(); }
   });
   it.each([undefined, linuxCapabilities])("legacy and Linux retain load and all six chart/sample tables", async (capabilities) => {
@@ -123,7 +130,8 @@ describe("capability detail presentation", () => {
     try {
       const markup = await renderDetail(client);
       expect(metricCard(markup, "Load")).toContain("9.00");
-      expect(markup).not.toContain("Unsupported");
+      expect(metricCard(markup, "Load")).not.toContain("Unsupported");
+      expect(markup).not.toMatch(/<p[^>]*role="status"[^>]*>Unsupported platform<\/p>/);
       expect(markup.match(/<svg[^>]*role="img"/g)).toHaveLength(6);
       expect(markup).toContain("View System load samples");
     } finally { client.clear(); }
@@ -152,7 +160,7 @@ describe("capability detail presentation", () => {
     }
     try {
       const markup = await renderDetail(client);
-      expect(markup).not.toContain("Unsupported platform");
+      expect(markup).not.toMatch(/<p[^>]*role="status"[^>]*>Unsupported platform<\/p>/);
       expect(markup).not.toContain("N/A");
       expect(markup).toContain("Retry current metrics"); expect(markup).toContain("Retry telemetry charts");
       expect(markup).toContain(statusCode === 403 ? "Access denied to VM metrics" : statusCode === 404 ? "Virtual machine not found" : code === "METRICS_DISABLED" ? "Metrics integration is disabled" : "Current metrics are unavailable");
@@ -163,7 +171,7 @@ describe("capability detail presentation", () => {
     try {
       const markup = await renderDetail(client);
       expect(markup).toContain("Loading current metrics"); expect(markup).toContain("Loading telemetry charts");
-      expect(markup).not.toContain("Unsupported platform");
+      expect(markup).not.toMatch(/<p[^>]*role="status"[^>]*>Unsupported platform<\/p>/);
     } finally { client.clear(); }
   });
 });
@@ -178,16 +186,16 @@ describe("browser-local detail timestamps", () => {
     const stamp = "2026-10-04T07:42:00Z";
     client.setQueryData(queryKeys.vm("org-one", vmId), { ...vm, createdAt: stamp, lastSeenAt: stamp });
     client.setQueryData(queryKeys.vmCurrentMetrics("org-one", vmId), {
-      sampledAt: stamp, lastSeenAt: stamp, status: "HEALTHY", metricsState: "available",
+      ...nativeTelemetry, sampledAt: stamp, lastSeenAt: stamp, status: "HEALTHY", metricsState: "available",
       metrics: { cpu: 1, memory: 2, disk: 3, networkRx: 0, networkTx: 0, load: 0, uptimeHours: 1 },
     });
     client.setQueryData(queryKeys.vmMetricsRange("org-one", vmId, "1h"), {
-      from: stamp, to: "2026-10-04T08:42:00Z", step: 60,
+      ...nativeTelemetry, metricsState: "available", from: stamp, to: "2026-10-04T08:42:00Z", step: 60,
       series: { cpu: [{ timestamp: stamp, value: 1 }], memory: [], disk: [], networkRx: [], networkTx: [], load: [] },
     });
     try {
       const markup = await renderDetail(client);
-      expect(markup).toContain("Created Oct 4, 2:42 PM");
+      expect(markup).toMatch(/>Created \(Asia\/(?:Ho_Chi_Minh|Saigon)\)<\/dt><dd[^>]*><time [dD]ate[Tt]ime="2026-10-04T07:42:00Z">Oct 4, 2:42 PM<\/time>/);
       expect(markup).toContain("Sampled Oct 4, 2:42 PM");
       expect(markup).toMatch(/Timestamp \(Asia\/(?:Ho_Chi_Minh|Saigon)\)/);
       expect(markup).toContain("Oct 4, 2:42:00 PM");

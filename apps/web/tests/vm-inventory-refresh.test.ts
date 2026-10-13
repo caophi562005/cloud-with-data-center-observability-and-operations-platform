@@ -26,6 +26,10 @@ function renderInventory() {
   return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(VmsPage)));
 }
 
+function inventoryRows(markup: string) {
+  return [markup.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0] ?? "", ...[...markup.matchAll(/<article\b[\s\S]*?<\/article>/g)].map((match) => match[0])].join("");
+}
+
 function refreshButton(markup: string) {
   return markup.match(/<button\b[^>]*aria-label="Refresh virtual machines"[^>]*>[\s\S]*?<\/button>/)?.[0];
 }
@@ -39,10 +43,10 @@ describe("VM inventory refresh presentation", () => {
     query.refetch.mockReset();
   });
 
-  it("offers only backend-supported health filters", () => {
+  it("offers authoritative native health and neutral host-state filters", () => {
     const markup = renderInventory();
     const healthFilters = [...markup.matchAll(/aria-label="Filter by ([^"]+)"/g)].map((match) => match[1]);
-    expect(healthFilters).toEqual(["Healthy", "Warning", "Critical", "Disconnected"]);
+    expect(healthFilters).toEqual(["Healthy", "Warning", "Critical", "Disconnected", "Unknown host state", "Unsupported host state"]);
   });
 
   it("places an accessible text refresh button beside the inventory count", () => {
@@ -81,21 +85,23 @@ describe("VM inventory refresh presentation", () => {
     const markup = renderInventory();
     expect(markup).toContain("Metrics are unavailable"); expect(markup).toContain("Virtual machine inventory");
   });
-  // Dropping capability reasons or widening inventory beyond four values must fail here.
+  // Dropping capability reasons or widening inventory beyond four metrics must fail here.
   it("keeps the Windows four-metric desktop/mobile subset and supported zeros", () => {
     query.data = [{ ...inventoryFixtures[3], metricsCapabilities: windowsCapabilities, metrics: { cpu: 0, memory: null, disk: 3, networkRx: 4, networkTx: 5, load: null, uptimeHours: 49 } }];
     const markup = renderInventory();
     expect(markup).toContain("hidden overflow-x-auto md:block"); expect(markup).toContain("grid gap-3 md:hidden");
     expect(markup.match(/0\.0%/g)).toHaveLength(2);
-    expect(markup).not.toContain("Unsupported");
+    expect(inventoryRows(markup)).not.toContain("Unsupported");
     expect(markup).not.toContain("Network RX"); expect(markup).not.toContain("Network TX"); expect(markup).not.toContain(">Load<");
   });
   it("explains unknown capability in both layouts without a physical outage claim", () => {
-    query.data = [{ ...inventoryFixtures[0], status: "DISCONNECTED", agentStatus: "ACTIVE", metricsCapabilities: unknownCapabilities }];
+    query.data = [{ ...inventoryFixtures[0], status: "DISCONNECTED", hostState: "unsupported", telemetryCompatibility: "unknown", telemetryDelivery: "unsupported", agentStatus: "ACTIVE", metricsCapabilities: unknownCapabilities }];
     const markup = renderInventory();
     expect(markup.match(/Unsupported platform/g) ?? []).toHaveLength(2);
     expect(markup.match(/N\/A/g)).toHaveLength(8);
-    expect(markup).toContain("Disconnected"); expect(markup).not.toContain("No fresh telemetry");
+    expect(inventoryRows(markup).match(/>Unsupported host state</g)).toHaveLength(2);
+    expect(inventoryRows(markup)).not.toContain(">Disconnected<");
+    expect(markup).not.toContain("No fresh telemetry");
   });
   it.each(["disabled", "unavailable"])("%s provider state precedes unknown inventory reason", (metricsState) => {
     query.data = [{ ...inventoryFixtures[0], metricsState, metricsCapabilities: unknownCapabilities }];
@@ -114,7 +120,7 @@ describe("VM inventory refresh presentation", () => {
   it("legacy Windows nulls remain missing rather than inferred unsupported", () => {
     query.data = [inventoryFixtures[3]];
     const markup = renderInventory();
-    expect(markup).not.toContain("Unsupported"); expect(markup).not.toContain("N/A"); expect(markup).toContain("—");
+    expect(inventoryRows(markup)).not.toContain("Unsupported"); expect(markup).not.toContain("N/A"); expect(markup).toContain("—");
   });
   it("allows refresh for an empty inventory", () => {
     query.data = [];

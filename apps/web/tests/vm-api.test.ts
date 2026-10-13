@@ -72,7 +72,12 @@ describe("VM API inventory", () => {
         osVersion: "Ubuntu 24.04",
         tags: { site: "sea-01" },
         agentStatus: "ACTIVE",
-        lastSeenAt: "2026-10-01T01:00:00.000Z",
+        // Legacy agent contact must not become native metric freshness.
+        lastSeenAt: null,
+        hostState: "unknown",
+        telemetryCompatibility: "unknown",
+        telemetryDelivery: "unknown",
+        lastControlContactAt: null,
         metrics: null,
         tagIds: { site: "tag-1" },
       }),

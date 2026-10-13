@@ -5,6 +5,7 @@ import {
   HOST_MONITORING_CATALOG, INTEGRATION_CATALOG, MAX_MONITORING_CONFIG_BYTES,
   trustedMonitoringUrlSchema,
 } from './integration-catalog.js';
+import { getNativeIntegrationProfile } from './integration-metric-profiles.js';
 import { mergeMonitoringSecrets, validateMonitoringDefinition, validateMonitoringSecrets } from './monitoring.schema.js';
 import { requireMonitoringSecretKey } from './monitoring-secrets.service.js';
 import type {
@@ -72,9 +73,8 @@ function serviceOptions(instance: IntegrationInstance, secrets: Record<string, s
           client_id: secrets.oauthClientId, client_secret: secrets.oauthClientSecret } : {}) };
     }
     case 'docker':
-      return { endpoint: instance.settings.endpoint, gather_services: false, container_name_include: [],
-        container_name_exclude: ['*'], tag_env: [], docker_label_include: [], docker_label_exclude: ['*'],
-        source_tag: false, timeout: '5s' };
+      return { endpoint: instance.settings.endpoint, gather_services: false,
+        tag_env: [], docker_label_include: [], docker_label_exclude: ['*'], timeout: '5s' };
     default:
       throw new BadRequestException('Invalid monitoring configuration');
   }
@@ -128,9 +128,11 @@ export function renderMonitoringConfig(
     for (const instance of [...validated.integrations].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)) {
       if (!instance.enabled) continue;
       const entry = INTEGRATION_CATALOG[instance.kind];
+      const profile = getNativeIntegrationProfile(instance, context.os);
       const block: NativeTable = {
-        ...serviceOptions(instance, credentials[instance.id] ?? {}), interval: `${instance.intervalSeconds}s`,
-        fieldpass: [...entry.fields], namepass: [entry.plugin], taginclude: [...entry.tags],
+        ...serviceOptions(instance, credentials[instance.id] ?? {}), ...profile.options,
+        interval: `${instance.intervalSeconds}s`,
+        fieldpass: [...profile.fields], namepass: [...profile.measurements], taginclude: [...profile.tags],
         tags: { integration_instance_id: instance.id },
       };
       (inputs[entry.plugin] ??= []).push(block);

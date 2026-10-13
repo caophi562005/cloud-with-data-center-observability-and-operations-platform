@@ -28,6 +28,8 @@ import { MonitoringService } from './monitoring/monitoring.service.js';
 import { IntegrationObservationService } from './monitoring/integration-observation.service.js';
 import { MonitoringController } from './monitoring/monitoring.controller.js';
 import { AgentControlController } from './monitoring/agent-control.controller.js';
+import { IntegrationMetricsController } from './monitoring/integration-metrics.controller.js';
+import { IntegrationMetricsService } from './monitoring/integration-metrics.service.js';
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { AgentControlController } from './monitoring/agent-control.controller.js
     InstallCodesController,
     MonitoringController,
     AgentControlController,
+    IntegrationMetricsController,
   ],
   providers: [
     VmsRepository,
@@ -61,6 +64,7 @@ import { AgentControlController } from './monitoring/agent-control.controller.js
     MonitoringRepository,
     MonitoringService,
     IntegrationObservationService,
+    IntegrationMetricsService,
     CognitoAuthGuard,
     PermissionsGuard,
   ],
@@ -73,6 +77,6 @@ export class VmsModule implements NestModule {
       // monitoring/control routes must not be cached.
       response.setHeader('Cache-Control', 'no-store');
       next();
-    }).forRoutes(MonitoringController, AgentControlController);
+    }).forRoutes(MonitoringController, AgentControlController, IntegrationMetricsController);
   }
 }
